@@ -6,6 +6,7 @@ on:
       checkpoint_url:
         description: RTMPose checkpoint URL
         required: true
+        default: https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose-t_simcc-body7_pt-body7_420e-256x192-026a1439_20230504.pth
         type: string
       mmdeploy_ref:
         description: MMDeploy git ref
