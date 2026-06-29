@@ -15,8 +15,12 @@ services:
     environment:
       TRITON_GRPC_URL: triton:8001
       POSE_MODEL_NAME: ${POSE_MODEL_NAME:-rtmpose}
-      POSE_INPUT_NAME: ${POSE_INPUT_NAME:-image}
-      POSE_OUTPUT_NAME: ${POSE_OUTPUT_NAME:-keypoints}
+      # Leave input/output names empty to auto-resolve them from Triton model metadata.
+      POSE_INPUT_NAME: ${POSE_INPUT_NAME:-}
+      POSE_OUTPUT_NAME: ${POSE_OUTPUT_NAME:-}
+      POSE_INPUT_WIDTH: ${POSE_INPUT_WIDTH:-192}
+      POSE_INPUT_HEIGHT: ${POSE_INPUT_HEIGHT:-256}
+      POSE_NORMALIZE: ${POSE_NORMALIZE:-1}
       POSE_TARGET_FPS: ${POSE_TARGET_FPS:-10}
       POSE_MOCK_MODE: ${POSE_MOCK_MODE:-1}
     ports:
@@ -28,8 +32,8 @@ services:
       dockerfile: triton.Dockerfile
     environment:
       POSE_MODEL_NAME: ${POSE_MODEL_NAME:-rtmpose}
-      POSE_INPUT_NAME: ${POSE_INPUT_NAME:-image}
-      POSE_OUTPUT_NAME: ${POSE_OUTPUT_NAME:-keypoints}
+      POSE_INPUT_NAME: ${POSE_INPUT_NAME:-}
+      POSE_OUTPUT_NAME: ${POSE_OUTPUT_NAME:-}
       RTMPOSE_ONNX_URL: ${RTMPOSE_ONNX_URL:-}
       RTMPOSE_ONNX_PATH: ${RTMPOSE_ONNX_PATH:-/models/rtmpose/1/model.onnx}
     volumes:
