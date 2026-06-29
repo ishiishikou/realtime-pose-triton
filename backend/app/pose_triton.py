@@ -10,7 +10,7 @@ from app.pose_runtime import ImageLayout, decode_pose_outputs, preprocess_frame
 TRITON_GRPC_URL = os.getenv('TRITON_GRPC_URL', 'triton:8001')
 POSE_MODEL_NAME = os.getenv('POSE_MODEL_NAME', 'rtmpose')
 POSE_MODEL_VERSION = os.getenv('POSE_MODEL_VERSION', '')
-POSE_MOCK_MODE = os.getenv('POSE_MOCK_MODE', '1') == '1'
+POSE_MOCK_MODE = os.getenv('POSE_MOCK_MODE', '0') == '1'
 POSE_INPUT_WIDTH = int(os.getenv('POSE_INPUT_WIDTH', '192'))
 POSE_INPUT_HEIGHT = int(os.getenv('POSE_INPUT_HEIGHT', '256'))
 POSE_NORMALIZE = os.getenv('POSE_NORMALIZE', '1') == '1'
