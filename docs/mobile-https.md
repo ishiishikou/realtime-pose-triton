@@ -71,5 +71,6 @@ Exact menu names vary by OS version and device vendor.
 
 - `docker-compose.https.yml` builds the frontend with `VITE_API_BASE_URL=/api`, so the phone does not try to call `http://localhost:8080`.
 - Nginx proxies `/api/*` to the backend container.
+- Backend and Triton are not published as LAN-facing ports by `docker-compose.https.yml`; access them through the web proxy when testing from a smartphone.
 - Keep the phone and the host machine on the same network.
 - If the phone cannot connect, check local firewall settings for ports `5173` and `5080`.
