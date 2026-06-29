@@ -12,4 +12,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r backend/requirements.txt -r backend/dev-requirements.txt
+python -m compileall backend/app
 PYTHONPATH=backend pytest backend/tests
+
+sh -n triton/entrypoint.sh
+docker compose config >/tmp/realtime-pose-triton-compose.yml
