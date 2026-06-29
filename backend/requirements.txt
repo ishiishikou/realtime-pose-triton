@@ -1,0 +1,7 @@
+aiortc
+av
+fastapi
+numpy
+pydantic
+tritonclient[grpc]
+uvicorn[standard]
