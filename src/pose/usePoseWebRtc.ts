@@ -34,6 +34,7 @@ export const usePoseWebRtc = () => {
       videoRef.current.srcObject = null;
     }
     setLatestPose(null);
+    setErrorMessage(null);
     setStatus('idle');
   }, []);
 
@@ -70,9 +71,15 @@ export const usePoseWebRtc = () => {
       peerConnectionRef.current = peerConnection;
 
       peerConnection.onconnectionstatechange = () => {
+        if (peerConnection.connectionState === 'connected') {
+          setErrorMessage(null);
+          setStatus('running');
+          return;
+        }
         if (peerConnection.connectionState === 'failed') {
           setStatus('error');
           setErrorMessage('WebRTC connection failed');
+          return;
         }
         if (peerConnection.connectionState === 'disconnected') {
           setErrorMessage('WebRTC connection disconnected');
@@ -85,6 +92,7 @@ export const usePoseWebRtc = () => {
           const payload = parsePoseMessage(event.data as string);
           if (payload.type === 'pose') {
             setLatestPose(payload as PoseMessage);
+            setErrorMessage(null);
             return;
           }
           if (payload.type === 'pose-error') {

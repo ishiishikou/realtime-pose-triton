@@ -1,11 +1,19 @@
 import type { PoseMessage, PosePoint } from './types';
 
-const MIN_SCORE = 0.2;
-const HEAD_KEYPOINT_INDICES = [0, 1, 2, 3, 4] as const;
+const MIN_FACE_SCORE = 0.2;
+const MIN_WRIST_SCORE = 0.1;
+const FACE_KEYPOINT_INDICES = [0, 1, 2, 3, 4] as const;
+const NOSE_INDEX = 0;
+const LEFT_SHOULDER_INDEX = 5;
+const RIGHT_SHOULDER_INDEX = 6;
 const LEFT_WRIST_INDEX = 9;
 const RIGHT_WRIST_INDEX = 10;
-const HEAD_CLEARANCE_RATIO = 0.06;
-const MIN_HEAD_CLEARANCE_PX = 16;
+const HEAD_TOP_FROM_NOSE_RATIO = 0.35;
+const SHOULDER_FALLBACK_HEAD_RATIO = 0.75;
+const MIN_HEAD_TOP_OFFSET_PX = 8;
+const MAX_HEAD_TOP_OFFSET_PX = 40;
+const HEAD_LINE_TOLERANCE_RATIO = 0.025;
+const MIN_HEAD_LINE_TOLERANCE_PX = 8;
 
 export const HAND_RAISE_CHECKS = [
   {
@@ -34,28 +42,52 @@ const emptyStatus = (): HandRaiseCheckStatus => ({
   bothHands: false,
 });
 
-const isConfidentPoint = (point: PosePoint | undefined): point is PosePoint => Boolean(point && point.score >= MIN_SCORE);
+const isConfidentPoint = (point: PosePoint | undefined, minScore: number): point is PosePoint => Boolean(point && point.score >= minScore);
 
-const getHeadTopY = (pose: PoseMessage): number | null => {
-  const confidentHeadPoints = HEAD_KEYPOINT_INDICES
-    .map((index) => pose.keypoints[index])
-    .filter(isConfidentPoint);
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-  if (confidentHeadPoints.length === 0) {
-    return null;
+const getAverageY = (points: PosePoint[]) => points.reduce((sum, point) => sum + point.y, 0) / points.length;
+
+const getDistance = (a: PosePoint, b: PosePoint) => Math.hypot(a.x - b.x, a.y - b.y);
+
+const estimateHeadLineY = (pose: PoseMessage): number | null => {
+  const nose = pose.keypoints[NOSE_INDEX];
+  const leftShoulder = pose.keypoints[LEFT_SHOULDER_INDEX];
+  const rightShoulder = pose.keypoints[RIGHT_SHOULDER_INDEX];
+  const confidentShoulders = [leftShoulder, rightShoulder].filter((point): point is PosePoint => isConfidentPoint(point, MIN_FACE_SCORE));
+
+  if (isConfidentPoint(nose, MIN_FACE_SCORE) && confidentShoulders.length > 0) {
+    const shoulderY = getAverageY(confidentShoulders);
+    const noseToShoulderY = Math.max(0, shoulderY - nose.y);
+    const headTopOffset = clamp(noseToShoulderY * HEAD_TOP_FROM_NOSE_RATIO, MIN_HEAD_TOP_OFFSET_PX, MAX_HEAD_TOP_OFFSET_PX);
+    return nose.y - headTopOffset;
   }
 
-  return Math.min(...confidentHeadPoints.map((point) => point.y));
+  const confidentFacePoints = FACE_KEYPOINT_INDICES
+    .map((index) => pose.keypoints[index])
+    .filter((point): point is PosePoint => isConfidentPoint(point, MIN_FACE_SCORE));
+
+  if (confidentFacePoints.length > 0) {
+    return Math.min(...confidentFacePoints.map((point) => point.y));
+  }
+
+  if (isConfidentPoint(leftShoulder, MIN_FACE_SCORE) && isConfidentPoint(rightShoulder, MIN_FACE_SCORE)) {
+    const shoulderY = getAverageY([leftShoulder, rightShoulder]);
+    const shoulderWidth = getDistance(leftShoulder, rightShoulder);
+    return shoulderY - shoulderWidth * SHOULDER_FALLBACK_HEAD_RATIO;
+  }
+
+  return null;
 };
 
-const isWristAboveHead = (pose: PoseMessage, wristIndex: number, headTopY: number): boolean => {
+const isWristAboveHead = (pose: PoseMessage, wristIndex: number, headLineY: number): boolean => {
   const wrist = pose.keypoints[wristIndex];
-  if (!isConfidentPoint(wrist)) {
+  if (!isConfidentPoint(wrist, MIN_WRIST_SCORE)) {
     return false;
   }
 
-  const clearancePx = Math.max(MIN_HEAD_CLEARANCE_PX, pose.sourceHeight * HEAD_CLEARANCE_RATIO);
-  return wrist.y < headTopY - clearancePx;
+  const tolerancePx = Math.max(MIN_HEAD_LINE_TOLERANCE_PX, pose.sourceHeight * HEAD_LINE_TOLERANCE_RATIO);
+  return wrist.y <= headLineY + tolerancePx;
 };
 
 export const evaluateHandRaiseChecks = (pose: PoseMessage | null): HandRaiseCheckStatus => {
@@ -63,13 +95,13 @@ export const evaluateHandRaiseChecks = (pose: PoseMessage | null): HandRaiseChec
     return emptyStatus();
   }
 
-  const headTopY = getHeadTopY(pose);
-  if (headTopY === null) {
+  const headLineY = estimateHeadLineY(pose);
+  if (headLineY === null) {
     return emptyStatus();
   }
 
-  const leftHandRaised = isWristAboveHead(pose, LEFT_WRIST_INDEX, headTopY);
-  const rightHandRaised = isWristAboveHead(pose, RIGHT_WRIST_INDEX, headTopY);
+  const leftHandRaised = isWristAboveHead(pose, LEFT_WRIST_INDEX, headLineY);
+  const rightHandRaised = isWristAboveHead(pose, RIGHT_WRIST_INDEX, headLineY);
 
   return {
     rightOnly: rightHandRaised && !leftHandRaised,
