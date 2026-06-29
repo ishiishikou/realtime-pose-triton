@@ -60,10 +60,10 @@ jobs:
           # isolated pip builds, so install runtime dependencies except chumpy.
           grep -v -E '^chumpy($|[<=> ])' requirements/runtime.txt > /tmp/mmpose-runtime-no-chumpy.txt
           pip install -r /tmp/mmpose-runtime-no-chumpy.txt
-          pip install --no-build-isolation --no-deps -v -e .
+          pip install --no-build-isolation --no-deps -v .
           cd ../mmdeploy
           pip install -r requirements/runtime.txt
-          pip install --no-build-isolation --no-deps -v -e .
+          pip install --no-build-isolation --no-deps -v .
       - name: Export ONNX on CPU
         env:
           CHECKPOINT_PATH: ${{ inputs.checkpoint_url }}
