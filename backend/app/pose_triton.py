@@ -10,7 +10,6 @@ from app.pose_runtime import ImageLayout, decode_pose_outputs, preprocess_frame
 TRITON_GRPC_URL = os.getenv('TRITON_GRPC_URL', 'triton:8001')
 POSE_MODEL_NAME = os.getenv('POSE_MODEL_NAME', 'rtmpose')
 POSE_MODEL_VERSION = os.getenv('POSE_MODEL_VERSION', '')
-POSE_MOCK_MODE = os.getenv('POSE_MOCK_MODE', '0') == '1'
 POSE_INPUT_WIDTH = int(os.getenv('POSE_INPUT_WIDTH', '192'))
 POSE_INPUT_HEIGHT = int(os.getenv('POSE_INPUT_HEIGHT', '256'))
 POSE_NORMALIZE = os.getenv('POSE_NORMALIZE', '1') == '1'
@@ -36,6 +35,10 @@ class ModelIO:
 
 
 _model_io: ModelIO | None = None
+
+
+def is_pose_mock_mode() -> bool:
+    return os.getenv('POSE_MOCK_MODE', '0') == '1'
 
 
 def mock_keypoints(width: int, height: int) -> list[dict[str, float]]:
@@ -175,8 +178,9 @@ def reset_model_io_cache() -> None:
 
 
 def get_pose_runtime_status() -> dict[str, Any]:
+    mock_mode = is_pose_mock_mode()
     status: dict[str, Any] = {
-        'mock_mode': POSE_MOCK_MODE,
+        'mock_mode': mock_mode,
         'model_name': POSE_MODEL_NAME,
         'model_version': POSE_MODEL_VERSION,
         'triton_grpc_url': TRITON_GRPC_URL,
@@ -186,7 +190,7 @@ def get_pose_runtime_status() -> dict[str, Any]:
         'input_height_fallback': POSE_INPUT_HEIGHT,
         'normalize': POSE_NORMALIZE,
     }
-    if POSE_MOCK_MODE:
+    if mock_mode:
         status['triton'] = {'ok': None, 'reason': 'mock mode enabled'}
         return status
 
@@ -204,7 +208,7 @@ def get_pose_runtime_status() -> dict[str, Any]:
 
 def run_pose(frame_rgb: np.ndarray, frame_id: int) -> dict[str, Any]:
     height, width, _channels = frame_rgb.shape
-    if POSE_MOCK_MODE:
+    if is_pose_mock_mode():
         return build_payload(frame_id, width, height, mock_keypoints(width, height))
 
     client = grpcclient.InferenceServerClient(url=TRITON_GRPC_URL)
