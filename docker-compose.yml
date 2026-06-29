@@ -22,7 +22,8 @@ services:
       POSE_INPUT_HEIGHT: ${POSE_INPUT_HEIGHT:-256}
       POSE_NORMALIZE: ${POSE_NORMALIZE:-1}
       POSE_TARGET_FPS: ${POSE_TARGET_FPS:-10}
-      POSE_MOCK_MODE: ${POSE_MOCK_MODE:-1}
+      # Real Triton inference is the default. Set POSE_MOCK_MODE=1 for camera/WebRTC-only local checks.
+      POSE_MOCK_MODE: ${POSE_MOCK_MODE:-0}
     ports:
       - "8080:8080"
 
