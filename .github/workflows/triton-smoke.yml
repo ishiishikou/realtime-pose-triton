@@ -26,17 +26,24 @@ on:
 permissions:
   contents: read
 
+env:
+  TRITON_IMAGE: nvcr.io/nvidia/tritonserver:24.12-py3
+
 jobs:
   empty-triton-startup:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    if: ${{ inputs.onnx_url == '' }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Build Triton image
-        run: docker build -f triton.Dockerfile -t realtime-pose-triton/triton:smoke .
-      - name: Start Triton without ONNX
+      - name: Start published Triton image without ONNX
         run: |
-          docker run -d --name triton-empty -p 8000:8000 realtime-pose-triton/triton:smoke
+          mkdir -p models-empty
+          docker run -d --name triton-empty \
+            -p 8000:8000 \
+            -v "$PWD/models-empty:/models-empty:ro" \
+            "$TRITON_IMAGE" \
+            tritonserver --model-repository=/models-empty --strict-readiness=false
+
           triton_live=0
           for i in $(seq 1 120); do
             if ! docker ps --format '{{.Names}}' | grep -qx triton-empty; then
@@ -65,25 +72,63 @@ jobs:
     timeout-minutes: 30
     if: ${{ inputs.onnx_url != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Build Triton image
-        run: docker build -f triton.Dockerfile -t realtime-pose-triton/triton:smoke .
-      - name: Start Triton with ONNX or zipped ONNX SDK URL
+      - name: Prepare ONNX model repository
         env:
           RTMPOSE_ONNX_URL: ${{ inputs.onnx_url }}
           POSE_MODEL_NAME: ${{ inputs.model_name }}
           POSE_INPUT_NAME: ${{ inputs.pose_input_name }}
           POSE_OUTPUT_NAME: ${{ inputs.pose_output_name }}
         run: |
-          mkdir -p models
+          set -euo pipefail
+          mkdir -p "models-runtime/${POSE_MODEL_NAME}/1" /tmp/rtmpose-download
+          wget -O /tmp/rtmpose-download/artifact "${RTMPOSE_ONNX_URL}"
+
+          if echo "${RTMPOSE_ONNX_URL}" | grep -Eiq '\.zip($|[?#])'; then
+            mkdir -p /tmp/rtmpose-download/unzipped
+            unzip -q /tmp/rtmpose-download/artifact -d /tmp/rtmpose-download/unzipped
+            found_onnx="$(find /tmp/rtmpose-download/unzipped -type f -name '*.onnx' | sort | head -n 1 || true)"
+            if [ -z "${found_onnx}" ]; then
+              echo "No .onnx file found in zipped SDK artifact."
+              find /tmp/rtmpose-download/unzipped -maxdepth 5 -type f -print || true
+              exit 1
+            fi
+            cp "${found_onnx}" "models-runtime/${POSE_MODEL_NAME}/1/model.onnx"
+          else
+            cp /tmp/rtmpose-download/artifact "models-runtime/${POSE_MODEL_NAME}/1/model.onnx"
+          fi
+
+          ls -lh "models-runtime/${POSE_MODEL_NAME}/1/model.onnx"
+          cat > "models-runtime/${POSE_MODEL_NAME}/config.pbtxt" <<EOF
+          name: "${POSE_MODEL_NAME}"
+          platform: "onnxruntime_onnx"
+          max_batch_size: 0
+          input [
+            {
+              name: "${POSE_INPUT_NAME}"
+              data_type: TYPE_UINT8
+              dims: [1, -1, -1, 3]
+            }
+          ]
+          output [
+            {
+              name: "${POSE_OUTPUT_NAME}"
+              data_type: TYPE_FP32
+              dims: [1, 17, 3]
+            }
+          ]
+          EOF
+          cat "models-runtime/${POSE_MODEL_NAME}/config.pbtxt"
+          find models-runtime -maxdepth 5 -type f -print
+
+      - name: Start published Triton image with ONNX model repository
+        env:
+          POSE_MODEL_NAME: ${{ inputs.model_name }}
+        run: |
           docker run -d --name triton-onnx \
             -p 8000:8000 \
-            -e RTMPOSE_ONNX_URL="$RTMPOSE_ONNX_URL" \
-            -e POSE_MODEL_NAME="$POSE_MODEL_NAME" \
-            -e POSE_INPUT_NAME="$POSE_INPUT_NAME" \
-            -e POSE_OUTPUT_NAME="$POSE_OUTPUT_NAME" \
-            -v "$PWD/models:/models" \
-            realtime-pose-triton/triton:smoke
+            -v "$PWD/models-runtime:/models-runtime:ro" \
+            "$TRITON_IMAGE" \
+            tritonserver --model-repository=/models-runtime --strict-readiness=false
 
           triton_live=0
           for i in $(seq 1 300); do
@@ -91,7 +136,7 @@ jobs:
               echo "Triton container exited before health/live became available."
               docker ps -a
               docker logs triton-onnx || true
-              find models -maxdepth 5 -type f -print || true
+              find models-runtime -maxdepth 5 -type f -print || true
               exit 1
             fi
             if curl -fsS http://localhost:8000/v2/health/live; then
@@ -104,8 +149,6 @@ jobs:
             fi
             sleep 2
           done
-
-          find models -maxdepth 5 -type f -print
 
           if [ "${triton_live}" != "1" ]; then
             echo "Triton did not expose health/live before timeout."
