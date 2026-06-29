@@ -37,10 +37,16 @@ The Triton smoke workflow extracts the first `.onnx` from the zip, creates a Tri
 
 ## Runtime mode
 
-After placing a usable ONNX artifact, disable mock mode:
+Real Triton inference is the default:
 
 ```env
 POSE_MOCK_MODE=0
+```
+
+For camera, WebRTC, DataChannel, and Canvas rendering checks without an RTMPose model, enable mock mode explicitly:
+
+```env
+POSE_MOCK_MODE=1
 ```
 
 Leave the input/output names empty to resolve them from Triton model metadata:
