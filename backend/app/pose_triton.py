@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
@@ -172,6 +172,34 @@ def _resolve_model_io(client: grpcclient.InferenceServerClient) -> ModelIO:
 def reset_model_io_cache() -> None:
     global _model_io
     _model_io = None
+
+
+def get_pose_runtime_status() -> dict[str, Any]:
+    status: dict[str, Any] = {
+        'mock_mode': POSE_MOCK_MODE,
+        'model_name': POSE_MODEL_NAME,
+        'model_version': POSE_MODEL_VERSION,
+        'triton_grpc_url': TRITON_GRPC_URL,
+        'input_name_override': POSE_INPUT_NAME_OVERRIDE,
+        'output_name_override': POSE_OUTPUT_NAME_OVERRIDE,
+        'input_width_fallback': POSE_INPUT_WIDTH,
+        'input_height_fallback': POSE_INPUT_HEIGHT,
+        'normalize': POSE_NORMALIZE,
+    }
+    if POSE_MOCK_MODE:
+        status['triton'] = {'ok': None, 'reason': 'mock mode enabled'}
+        return status
+
+    try:
+        client = grpcclient.InferenceServerClient(url=TRITON_GRPC_URL)
+        server_live = client.is_server_live()
+        server_ready = client.is_server_ready()
+        status['triton'] = {'ok': server_live and server_ready, 'server_live': server_live, 'server_ready': server_ready}
+        if server_live and server_ready:
+            status['model_io'] = asdict(_resolve_model_io(client))
+    except Exception as exc:
+        status['triton'] = {'ok': False, 'error': str(exc)}
+    return status
 
 
 def run_pose(frame_rgb: np.ndarray, frame_id: int) -> dict[str, Any]:
