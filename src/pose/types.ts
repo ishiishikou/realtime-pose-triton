@@ -10,6 +10,7 @@ export type PoseMessage = {
   sourceWidth: number;
   sourceHeight: number;
   keypoints: PosePoint[];
+  inferenceMs?: number;
 };
 
 export type PoseErrorMessage = {
