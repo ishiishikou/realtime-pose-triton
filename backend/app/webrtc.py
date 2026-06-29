@@ -14,7 +14,6 @@ from app.pose_types import WebRtcOffer
 
 router = APIRouter()
 POSE_TARGET_FPS = float(os.getenv('POSE_TARGET_FPS', '10'))
-active_pc: RTCPeerConnection | None = None
 pcs: set[RTCPeerConnection] = set()
 
 
@@ -23,12 +22,8 @@ async def close_pc(pc: RTCPeerConnection) -> None:
     await pc.close()
 
 
-async def set_active_pc(pc: RTCPeerConnection) -> None:
-    global active_pc
-    if active_pc and active_pc is not pc:
-        await close_pc(active_pc)
-    active_pc = pc
-    pcs.add(pc)
+def get_active_peer_count() -> int:
+    return len(pcs)
 
 
 async def consume_video(track, channel_ref: dict[str, Any]) -> None:
@@ -53,10 +48,14 @@ async def consume_video(track, channel_ref: dict[str, Any]) -> None:
             continue
 
         frame_rgb = frame.to_ndarray(format='rgb24')
+        infer_started_at = time.perf_counter()
         try:
             payload = await asyncio.to_thread(run_pose, frame_rgb, frame_id)
+            payload['inferenceMs'] = round((time.perf_counter() - infer_started_at) * 1000, 2)
         except InferenceServerException as exc:
             payload = {'type': 'pose-error', 'frameId': frame_id, 'message': str(exc)}
+        except Exception as exc:
+            payload = {'type': 'pose-error', 'frameId': frame_id, 'message': f'Pose inference failed: {exc}'}
 
         channel.send(json.dumps(payload))
 
@@ -66,7 +65,7 @@ async def webrtc_offer(offer: WebRtcOffer) -> dict[str, str]:
     pc = RTCPeerConnection()
     pc_id = f'pc-{uuid.uuid4()}'
     channel_ref: dict[str, Any] = {'channel': None}
-    await set_active_pc(pc)
+    pcs.add(pc)
 
     @pc.on('connectionstatechange')
     async def on_connectionstatechange() -> None:

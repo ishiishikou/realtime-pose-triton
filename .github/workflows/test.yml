@@ -30,7 +30,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
       - run: python -m compileall backend/app
-      - run: PYTHONPATH=backend pytest backend/tests
+      - run: POSE_MOCK_MODE=1 PYTHONPATH=backend pytest backend/tests
 
   packaging:
     runs-on: ubuntu-latest

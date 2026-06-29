@@ -83,6 +83,39 @@ h1 {
 .secondary-button { border: 1px solid rgba(23, 32, 51, 0.16); color: #172033; background: #fff; }
 .primary-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: 0.56; }
 
+.status-grid,
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.status-tile {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.status-label {
+  color: #63708a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.status-tile strong {
+  overflow: hidden;
+  color: #0e1628;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pose-stage {
   position: relative;
   width: 100%;
@@ -105,8 +138,29 @@ h1 {
 .note { margin: 0; color: #63708a; font-size: 0.92rem; line-height: 1.7; }
 .error-text { margin: 0; color: #b91c1c; font-size: 0.92rem; line-height: 1.7; }
 
+.metrics-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 16px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.72);
+}
+
+.metrics-grid .note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .status-grid,
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 640px) {
   .pose-card { padding: 20px; border-radius: 22px; }
   .pose-header, .button-row { flex-direction: column; }
   .primary-button, .secondary-button { width: 100%; }
+  .status-grid,
+  .metrics-grid { grid-template-columns: 1fr; }
 }

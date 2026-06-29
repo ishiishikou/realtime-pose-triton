@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from tritonclient.utils import InferenceServerException
 
+from app.pose_triton import get_pose_runtime_status
+from app.webrtc import get_active_peer_count
 from app.webrtc import router as webrtc_router
 from app.webrtc import shutdown_peer_connections
 
@@ -36,6 +38,11 @@ def triton_health() -> dict[str, Any]:
         return {'ok': server_live and server_ready, 'server_live': server_live, 'server_ready': server_ready, 'triton_url': TRITON_GRPC_URL}
     except InferenceServerException as exc:
         return {'ok': False, 'server_live': False, 'server_ready': False, 'triton_url': TRITON_GRPC_URL, 'error': str(exc)}
+
+
+@app.get('/pose/status')
+def pose_status() -> dict[str, Any]:
+    return {**get_pose_runtime_status(), 'active_peer_connections': get_active_peer_count()}
 
 
 @app.on_event('shutdown')

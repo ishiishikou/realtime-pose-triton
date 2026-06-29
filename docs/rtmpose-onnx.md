@@ -37,10 +37,31 @@ The Triton smoke workflow extracts the first `.onnx` from the zip, creates a Tri
 
 ## Runtime mode
 
-After placing a usable ONNX artifact, disable mock mode:
+Real Triton inference is the default:
 
 ```env
 POSE_MOCK_MODE=0
 ```
 
-The OpenMMLab ONNX SDK artifact may not match the backend app's current simplified IO contract. The smoke workflow only verifies that Triton can load the ONNX model. Backend integration should inspect the loaded model's actual input/output names and shapes before wiring inference requests.
+For camera, WebRTC, DataChannel, and Canvas rendering checks without an RTMPose model, enable mock mode explicitly:
+
+```env
+POSE_MOCK_MODE=1
+```
+
+Leave the input/output names empty to resolve them from Triton model metadata:
+
+```env
+POSE_INPUT_NAME=
+POSE_OUTPUT_NAME=
+```
+
+The backend preprocesses camera frames to the model input shape, supports NCHW/NHWC image tensors, and decodes either direct `[x, y, score]` outputs or two-output SimCC-style RTMPose tensors. For dynamic input shapes, set the fallback dimensions explicitly:
+
+```env
+POSE_INPUT_WIDTH=192
+POSE_INPUT_HEIGHT=256
+POSE_NORMALIZE=1
+```
+
+The smoke workflow only verifies that Triton can load the ONNX model. Runtime correctness still depends on the exact ONNX artifact contract, preprocessing convention, and output tensor semantics.
