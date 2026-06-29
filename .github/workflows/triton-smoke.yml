@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       onnx_url:
-        description: Optional ONNX artifact URL to test with Triton
+        description: Optional ONNX or zipped ONNX SDK URL to test with Triton
         required: false
         type: string
       model_name:
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Triton image
         run: docker build -f triton.Dockerfile -t realtime-pose-triton/triton:smoke .
-      - name: Start Triton with ONNX URL
+      - name: Start Triton with ONNX or zipped ONNX SDK URL
         env:
           RTMPOSE_ONNX_URL: ${{ inputs.onnx_url }}
           POSE_MODEL_NAME: ${{ inputs.model_name }}
@@ -79,6 +79,7 @@ jobs:
             fi
             sleep 2
           done
+          find models -maxdepth 4 -type f -print
           curl -fsS http://localhost:8000/v2/models/${POSE_MODEL_NAME}/ready
       - name: Show Triton logs
         if: always()
