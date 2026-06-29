@@ -1,6 +1,12 @@
 import numpy as np
 
-from app.pose_triton import mock_keypoints, run_pose
+from app.pose_triton import is_pose_mock_mode, mock_keypoints, run_pose
+
+
+def test_pose_mock_mode_defaults_to_real_inference(monkeypatch):
+    monkeypatch.delenv('POSE_MOCK_MODE', raising=False)
+
+    assert is_pose_mock_mode() is False
 
 
 def test_mock_keypoints_return_coco_17_points():
@@ -13,7 +19,8 @@ def test_mock_keypoints_return_coco_17_points():
     assert all(0 <= point['score'] <= 1 for point in keypoints)
 
 
-def test_run_pose_mock_payload_shape():
+def test_run_pose_mock_payload_shape(monkeypatch):
+    monkeypatch.setenv('POSE_MOCK_MODE', '1')
     frame = np.zeros((360, 640, 3), dtype=np.uint8)
     payload = run_pose(frame, frame_id=42)
 
