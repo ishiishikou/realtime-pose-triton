@@ -50,20 +50,6 @@ if [ -f "${MODEL_PATH}" ]; then
 name: "${MODEL_NAME}"
 platform: "onnxruntime_onnx"
 max_batch_size: 0
-input [
-  {
-    name: "${POSE_INPUT_NAME:-image}"
-    data_type: TYPE_UINT8
-    dims: [1, -1, -1, 3]
-  }
-]
-output [
-  {
-    name: "${POSE_OUTPUT_NAME:-keypoints}"
-    data_type: TYPE_FP32
-    dims: [1, 17, 3]
-  }
-]
 EOF
   cat "${RUNTIME_CONFIG_PATH}"
   exec tritonserver --model-repository="${RUNTIME_REPOSITORY}" --strict-readiness=false
