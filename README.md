@@ -45,6 +45,15 @@ cp .env.example .env.local
 npm run dev
 ```
 
+Mobile HTTPS testing:
+
+```bash
+bash scripts/create-local-https-cert.sh <host-lan-ip>
+docker compose -f docker-compose.https.yml up --build
+```
+
+Open `https://<host-lan-ip>:5173` from a smartphone on the same network. See `docs/mobile-https.md` for certificate trust steps.
+
 ## WebRTC / Triton
 
 The frontend keeps the local camera preview on the device and sends only a downscaled 640x360 stream to the backend. The backend receives frames through WebRTC, converts frames to RGB NumPy arrays, preprocesses them for the loaded Triton model, and forwards inference requests over Triton gRPC. Pose keypoints are returned through a WebRTC DataChannel.
