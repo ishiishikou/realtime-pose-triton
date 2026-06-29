@@ -19,12 +19,22 @@ def mock_keypoints(width: int, height: int) -> list[dict[str, float]]:
     cy = height * 0.42
     return [
         {'x': cx, 'y': cy - height * 0.22, 'score': 0.9},
+        {'x': cx - width * 0.04, 'y': cy - height * 0.24, 'score': 0.8},
+        {'x': cx + width * 0.04, 'y': cy - height * 0.24, 'score': 0.8},
+        {'x': cx - width * 0.08, 'y': cy - height * 0.18, 'score': 0.8},
+        {'x': cx + width * 0.08, 'y': cy - height * 0.18, 'score': 0.8},
         {'x': cx - width * 0.12, 'y': cy, 'score': 0.9},
         {'x': cx + width * 0.12, 'y': cy, 'score': 0.9},
         {'x': cx - width * 0.2, 'y': cy + height * 0.16, 'score': 0.85},
         {'x': cx + width * 0.2, 'y': cy + height * 0.16, 'score': 0.85},
+        {'x': cx - width * 0.24, 'y': cy + height * 0.32, 'score': 0.8},
+        {'x': cx + width * 0.24, 'y': cy + height * 0.32, 'score': 0.8},
         {'x': cx - width * 0.1, 'y': cy + height * 0.34, 'score': 0.9},
         {'x': cx + width * 0.1, 'y': cy + height * 0.34, 'score': 0.9},
+        {'x': cx - width * 0.12, 'y': cy + height * 0.55, 'score': 0.85},
+        {'x': cx + width * 0.12, 'y': cy + height * 0.55, 'score': 0.85},
+        {'x': cx - width * 0.14, 'y': cy + height * 0.75, 'score': 0.8},
+        {'x': cx + width * 0.14, 'y': cy + height * 0.75, 'score': 0.8},
     ]
 
 
