@@ -55,11 +55,15 @@ jobs:
         run: |
           mim install mmengine
           mim install "mmcv==2.1.0"
-          pip install -r requirements.txt
-          pip install -v -e .
+          # RTMPose export does not need chumpy. The upstream full runtime
+          # requirements include chumpy, whose legacy build is brittle on modern
+          # isolated pip builds, so install runtime dependencies except chumpy.
+          grep -v -E '^chumpy($|[<=> ])' requirements/runtime.txt > /tmp/mmpose-runtime-no-chumpy.txt
+          pip install -r /tmp/mmpose-runtime-no-chumpy.txt
+          pip install --no-deps -v -e .
           cd ../mmdeploy
           pip install -r requirements/runtime.txt
-          pip install -v -e .
+          pip install --no-deps -v -e .
       - name: Export ONNX on CPU
         env:
           CHECKPOINT_PATH: ${{ inputs.checkpoint_url }}
