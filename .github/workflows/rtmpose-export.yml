@@ -70,12 +70,16 @@ jobs:
           cd ../mmdeploy
           pip install -r requirements/runtime.txt
           pip install --no-build-isolation --no-deps -v .
-          pip install "numpy<2"
+          pip install "numpy<2" onnx onnxruntime
           python - <<'PY'
           import mmdet
           import numpy as np
+          import onnx
+          import onnxruntime as ort
           print('mmdet:', mmdet.__version__)
           print('numpy:', np.__version__)
+          print('onnx:', onnx.__version__)
+          print('onnxruntime:', ort.__version__)
           PY
       - name: Export ONNX on CPU
         env:
