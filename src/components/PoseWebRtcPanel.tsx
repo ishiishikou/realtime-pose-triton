@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { fetchPoseStatus, type PoseRuntimeStatus } from '../api/backend';
 import { drawPose } from '../pose/drawPose';
+import { evaluateHandRaiseChecks, HAND_RAISE_CHECKS, type HandRaiseCheckStatus } from '../pose/handRaiseChecks';
 import { usePoseWebRtc } from '../pose/usePoseWebRtc';
 
 const formatTritonStatus = (runtimeStatus: PoseRuntimeStatus | null) => {
@@ -17,10 +18,19 @@ const formatTritonStatus = (runtimeStatus: PoseRuntimeStatus | null) => {
   return 'not ready';
 };
 
+const createEmptyHandRaiseStatus = (): HandRaiseCheckStatus => ({
+  rightOnly: false,
+  leftOnly: false,
+  bothHands: false,
+});
+
 export const PoseWebRtcPanel = () => {
   const { videoRef, canvasRef, latestPose, status, errorMessage, start, stop } = usePoseWebRtc();
   const [runtimeStatus, setRuntimeStatus] = useState<PoseRuntimeStatus | null>(null);
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
+  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [completedHandRaiseChecks, setCompletedHandRaiseChecks] = useState<HandRaiseCheckStatus>(createEmptyHandRaiseStatus);
+  const currentHandRaiseChecks = useMemo(() => evaluateHandRaiseChecks(latestPose), [latestPose]);
 
   useEffect(() => {
     const refresh = async () => {
@@ -37,6 +47,22 @@ export const PoseWebRtcPanel = () => {
     const intervalId = window.setInterval(refresh, 5000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    setCompletedHandRaiseChecks((previousCompletedChecks) => {
+      const nextCompletedChecks: HandRaiseCheckStatus = { ...previousCompletedChecks };
+      let changed = false;
+
+      for (const check of HAND_RAISE_CHECKS) {
+        if (currentHandRaiseChecks[check.id] && !nextCompletedChecks[check.id]) {
+          nextCompletedChecks[check.id] = true;
+          changed = true;
+        }
+      }
+
+      return changed ? nextCompletedChecks : previousCompletedChecks;
+    });
+  }, [currentHandRaiseChecks]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -67,6 +93,7 @@ export const PoseWebRtcPanel = () => {
   const modeLabel = runtimeStatus?.mock_mode ? 'mock' : 'real';
   const tritonLabel = formatTritonStatus(runtimeStatus);
   const modelIo = runtimeStatus?.model_io;
+  const completedHandRaiseCount = HAND_RAISE_CHECKS.filter((check) => completedHandRaiseChecks[check.id]).length;
 
   return (
     <section className="pose-card">
@@ -104,6 +131,39 @@ export const PoseWebRtcPanel = () => {
       <div className="pose-stage">
         <video ref={videoRef} className="pose-video" playsInline muted autoPlay />
         <canvas ref={canvasRef} className="pose-canvas" />
+        <div className="pose-checklist-overlay">
+          <button
+            className="pose-checklist-summary"
+            type="button"
+            aria-expanded={isChecklistOpen}
+            aria-controls="hand-raise-checklist"
+            onClick={() => setIsChecklistOpen((nextOpen) => !nextOpen)}
+          >
+            <span className="pose-checklist-kicker">実施状況</span>
+            <strong>{completedHandRaiseCount}/{HAND_RAISE_CHECKS.length}</strong>
+            <span className="pose-checklist-hint">{isChecklistOpen ? 'タップで閉じる' : 'タップで詳細'}</span>
+          </button>
+
+          {isChecklistOpen ? (
+            <div id="hand-raise-checklist" className="pose-checklist-detail" role="list" aria-label="hand raise checklist">
+              {HAND_RAISE_CHECKS.map((check) => {
+                const isCompleted = completedHandRaiseChecks[check.id];
+                const isDetectedNow = currentHandRaiseChecks[check.id];
+                const statusLabel = isCompleted ? 'できた' : isDetectedNow ? '判定中' : '未実施';
+
+                return (
+                  <div className={isCompleted ? 'pose-checklist-item done' : 'pose-checklist-item pending'} role="listitem" key={check.id}>
+                    <span className="pose-checklist-mark" aria-hidden="true">{isCompleted ? '✓' : '—'}</span>
+                    <div>
+                      <strong>{check.label}</strong>
+                      <span>{statusLabel} / {check.description}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="metrics-grid">
