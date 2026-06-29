@@ -37,21 +37,32 @@ jobs:
       - name: Start Triton without ONNX
         run: |
           docker run -d --name triton-empty -p 8000:8000 realtime-pose-triton/triton:smoke
-          for i in $(seq 1 60); do
+          triton_live=0
+          for i in $(seq 1 120); do
+            if ! docker ps --format '{{.Names}}' | grep -qx triton-empty; then
+              echo "Triton container exited before health/live became available."
+              docker logs triton-empty || true
+              exit 1
+            fi
             if curl -fsS http://localhost:8000/v2/health/live; then
-              exit 0
+              triton_live=1
+              break
             fi
             sleep 2
           done
-          docker logs triton-empty
-          exit 1
+          if [ "${triton_live}" != "1" ]; then
+            echo "Triton did not expose health/live before timeout."
+            docker ps -a
+            docker logs triton-empty || true
+            exit 1
+          fi
       - name: Stop Triton
         if: always()
         run: docker rm -f triton-empty || true
 
   onnx-triton-startup:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     if: ${{ inputs.onnx_url != '' }}
     steps:
       - uses: actions/checkout@v4
@@ -73,14 +84,42 @@ jobs:
             -e POSE_OUTPUT_NAME="$POSE_OUTPUT_NAME" \
             -v "$PWD/models:/models" \
             realtime-pose-triton/triton:smoke
-          for i in $(seq 1 90); do
+
+          triton_live=0
+          for i in $(seq 1 300); do
+            if ! docker ps --format '{{.Names}}' | grep -qx triton-onnx; then
+              echo "Triton container exited before health/live became available."
+              docker ps -a
+              docker logs triton-onnx || true
+              find models -maxdepth 5 -type f -print || true
+              exit 1
+            fi
             if curl -fsS http://localhost:8000/v2/health/live; then
+              triton_live=1
               break
+            fi
+            if [ $((i % 30)) -eq 0 ]; then
+              echo "Waiting for Triton health/live... attempt ${i}/300"
+              docker logs --tail 80 triton-onnx || true
             fi
             sleep 2
           done
-          find models -maxdepth 4 -type f -print
-          curl -fsS http://localhost:8000/v2/models/${POSE_MODEL_NAME}/ready
+
+          find models -maxdepth 5 -type f -print
+
+          if [ "${triton_live}" != "1" ]; then
+            echo "Triton did not expose health/live before timeout."
+            docker ps -a
+            docker logs triton-onnx || true
+            exit 1
+          fi
+
+          curl -fsS http://localhost:8000/v2/models/${POSE_MODEL_NAME}/ready || {
+            echo "Triton is live, but model is not ready."
+            curl -fsS http://localhost:8000/v2/models/${POSE_MODEL_NAME} || true
+            docker logs triton-onnx || true
+            exit 1
+          }
       - name: Show Triton logs
         if: always()
         run: docker logs triton-onnx || true
