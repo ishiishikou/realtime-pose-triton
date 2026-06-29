@@ -69,7 +69,8 @@ jobs:
           CHECKPOINT_PATH: ${{ inputs.checkpoint_url }}
           MMDEPLOY_DIR: ../mmdeploy
           MMPOSE_DIR: ../mmpose
-          WORK_DIR: rtmpose-ort/rtmpose-m
+          MODEL_CONFIG: ../mmpose/projects/rtmpose/rtmpose/body_2d_keypoint/rtmpose-t_8xb256-420e_coco-256x192.py
+          WORK_DIR: rtmpose-ort/rtmpose-t
           OUTPUT_PATH: models/rtmpose/1/model.onnx
         run: bash scripts/export-rtmpose-onnx.sh
       - name: Inspect generated ONNX
