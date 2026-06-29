@@ -6,6 +6,7 @@ on:
       onnx_url:
         description: Optional ONNX or zipped ONNX SDK URL to test with Triton
         required: false
+        default: https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-t_simcc-body7_pt-body7_420e-256x192-026a1439_20230504.zip
         type: string
       model_name:
         description: Triton model name
