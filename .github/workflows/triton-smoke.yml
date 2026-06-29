@@ -1,0 +1,88 @@
+name: Triton Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      onnx_url:
+        description: Optional ONNX artifact URL to test with Triton
+        required: false
+        type: string
+      model_name:
+        description: Triton model name
+        required: false
+        default: rtmpose
+        type: string
+      pose_input_name:
+        description: Triton model input name
+        required: false
+        default: image
+        type: string
+      pose_output_name:
+        description: Triton model output name
+        required: false
+        default: keypoints
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  empty-triton-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Triton image
+        run: docker build -f triton.Dockerfile -t realtime-pose-triton/triton:smoke .
+      - name: Start Triton without ONNX
+        run: |
+          docker run -d --name triton-empty -p 8000:8000 realtime-pose-triton/triton:smoke
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/v2/health/live; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs triton-empty
+          exit 1
+      - name: Stop Triton
+        if: always()
+        run: docker rm -f triton-empty || true
+
+  onnx-triton-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ inputs.onnx_url != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Triton image
+        run: docker build -f triton.Dockerfile -t realtime-pose-triton/triton:smoke .
+      - name: Start Triton with ONNX URL
+        env:
+          RTMPOSE_ONNX_URL: ${{ inputs.onnx_url }}
+          POSE_MODEL_NAME: ${{ inputs.model_name }}
+          POSE_INPUT_NAME: ${{ inputs.pose_input_name }}
+          POSE_OUTPUT_NAME: ${{ inputs.pose_output_name }}
+        run: |
+          mkdir -p models
+          docker run -d --name triton-onnx \
+            -p 8000:8000 \
+            -e RTMPOSE_ONNX_URL="$RTMPOSE_ONNX_URL" \
+            -e POSE_MODEL_NAME="$POSE_MODEL_NAME" \
+            -e POSE_INPUT_NAME="$POSE_INPUT_NAME" \
+            -e POSE_OUTPUT_NAME="$POSE_OUTPUT_NAME" \
+            -v "$PWD/models:/models" \
+            realtime-pose-triton/triton:smoke
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/v2/health/live; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/v2/models/${POSE_MODEL_NAME}/ready
+      - name: Show Triton logs
+        if: always()
+        run: docker logs triton-onnx || true
+      - name: Stop Triton
+        if: always()
+        run: docker rm -f triton-onnx || true
