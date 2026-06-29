@@ -33,10 +33,11 @@ jobs:
       - name: Install base tools
         run: |
           python -m pip install --upgrade pip
-          # MIM inspects the installed torch/cuda version even when installing packages
-          # such as mmengine. Install CPU-only PyTorch first so MIM can resolve
-          # OpenMMLab package links on GitHub-hosted CPU runners.
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          # Keep the export stack on a PyTorch version that has OpenMMLab CPU wheels.
+          # The latest CPU PyTorch can make MIM look for a wheel path that does not
+          # exist yet, which falls back to a slow and brittle mmcv source build.
+          pip install "setuptools<70" wheel
+          pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cpu
           pip install openmim
           python - <<'PY'
           import torch
@@ -52,7 +53,7 @@ jobs:
         working-directory: ../mmpose
         run: |
           mim install mmengine
-          mim install "mmcv>=2.0.0"
+          mim install "mmcv==2.1.0"
           pip install -r requirements.txt
           pip install -v -e .
           cd ../mmdeploy
