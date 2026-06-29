@@ -40,4 +40,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sh -n triton/entrypoint.sh
-      - run: docker compose config >/tmp/realtime-pose-triton-compose.yml
+      - run: docker compose config > /tmp/realtime-pose-triton-compose.yml
