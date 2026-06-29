@@ -22,7 +22,8 @@ React camera preview
 - Triton gRPC inference bridge
 - Triton model metadata based input/output auto-detection
 - RTMPose-style preprocessing and SimCC output decoding
-- Mock pose mode for CPU-only development
+- Real Triton inference by default
+- Optional mock pose mode for CPU-only development
 - DataChannel pose result streaming
 - Canvas keypoint overlay
 - Optional ONNX startup download
@@ -54,7 +55,9 @@ curl http://localhost:8080/healthz
 curl http://localhost:8080/triton/health
 ```
 
-`POSE_MOCK_MODE=1` lets you verify camera, WebRTC, DataChannel, and Canvas rendering without an RTMPose model. To use a real ONNX artifact, place it at `models/rtmpose/1/model.onnx` or set `RTMPOSE_ONNX_URL`, then switch to `POSE_MOCK_MODE=0`.
+`POSE_MOCK_MODE=0` is the default. To use a real ONNX artifact, place it at `models/rtmpose/1/model.onnx` or set `RTMPOSE_ONNX_URL`.
+
+For camera, WebRTC, DataChannel, and Canvas rendering checks without an RTMPose model, set `POSE_MOCK_MODE=1`.
 
 By default, `POSE_INPUT_NAME` and `POSE_OUTPUT_NAME` are empty so the backend uses Triton model metadata to auto-detect the first model input and all model outputs. Set those variables only when you need to force a specific ONNX contract.
 
