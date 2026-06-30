@@ -28,7 +28,7 @@ export const PoseWebRtcPanel = () => {
   const { videoRef, canvasRef, latestPose, status, errorMessage, start, stop } = usePoseWebRtc();
   const [runtimeStatus, setRuntimeStatus] = useState<PoseRuntimeStatus | null>(null);
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
-  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [isChecklistOpen, setIsChecklistOpen] = useState(true);
   const [completedHandRaiseChecks, setCompletedHandRaiseChecks] = useState<HandRaiseCheckStatus>(createEmptyHandRaiseStatus);
   const currentHandRaiseChecks = useMemo(() => evaluateHandRaiseChecks(latestPose), [latestPose]);
 
@@ -94,18 +94,19 @@ export const PoseWebRtcPanel = () => {
   const tritonLabel = formatTritonStatus(runtimeStatus);
   const modelIo = runtimeStatus?.model_io;
   const completedHandRaiseCount = HAND_RAISE_CHECKS.filter((check) => completedHandRaiseChecks[check.id]).length;
+  const inferenceLabel = latestPose?.inferenceMs !== undefined && latestPose.inferenceMs !== null ? `${latestPose.inferenceMs} ms` : '-';
 
   return (
     <section className="pose-card">
       <div className="pose-header">
         <div>
           <p className="eyebrow">WebRTC + RTMPose + Triton</p>
-          <h1>Realtime Pose Triton</h1>
-          <p className="lead">Camera preview stays local. A downscaled WebRTC stream is sent to the backend for pose inference.</p>
+          <h1>カメラ上でポーズ判定</h1>
+          <p className="lead">映像に推論結果と実施状況を重ねて、右手・左手・両手の判定を確認します。</p>
         </div>
         <div className="button-row compact">
-          <button className="primary-button" type="button" onClick={start} disabled={isRunning}>Start</button>
-          <button className="secondary-button" type="button" onClick={stop} disabled={status === 'idle'}>Stop</button>
+          <button className="primary-button" type="button" onClick={start} disabled={isRunning}>開始</button>
+          <button className="secondary-button" type="button" onClick={stop} disabled={status === 'idle'}>停止</button>
         </div>
       </div>
 
@@ -169,7 +170,7 @@ export const PoseWebRtcPanel = () => {
       <div className="metrics-grid">
         <p className="note">frame: {latestPose?.frameId ?? '-'}</p>
         <p className="note">keypoints: {latestPose?.keypoints.length ?? '-'}</p>
-        <p className="note">inference: {latestPose?.inferenceMs ? `${latestPose.inferenceMs} ms` : '-'}</p>
+        <p className="note">inference: {inferenceLabel}</p>
         <p className="note">model: {runtimeStatus?.model_name ?? '-'}</p>
         <p className="note">input: {modelIo ? `${modelIo.input_name} ${modelIo.layout} ${modelIo.input_width}x${modelIo.input_height}` : '-'}</p>
         <p className="note">outputs: {modelIo?.output_names.join(', ') || '-'}</p>
