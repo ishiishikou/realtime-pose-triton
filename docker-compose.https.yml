@@ -1,0 +1,49 @@
+name: realtime-pose-triton-https
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_WEBRTC_CONFIG: ${VITE_WEBRTC_CONFIG:-}
+    volumes:
+      - ./docker/nginx.https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "5173:443"
+      - "5080:80"
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    environment:
+      TRITON_GRPC_URL: triton:8001
+      POSE_MODEL_NAME: ${POSE_MODEL_NAME:-rtmpose}
+      POSE_INPUT_NAME: ${POSE_INPUT_NAME:-}
+      POSE_OUTPUT_NAME: ${POSE_OUTPUT_NAME:-}
+      POSE_INPUT_WIDTH: ${POSE_INPUT_WIDTH:-192}
+      POSE_INPUT_HEIGHT: ${POSE_INPUT_HEIGHT:-256}
+      POSE_NORMALIZE: ${POSE_NORMALIZE:-1}
+      POSE_TARGET_FPS: ${POSE_TARGET_FPS:-10}
+      POSE_MOCK_MODE: ${POSE_MOCK_MODE:-0}
+    expose:
+      - "8080"
+
+  triton:
+    build:
+      context: .
+      dockerfile: triton.Dockerfile
+    environment:
+      POSE_MODEL_NAME: ${POSE_MODEL_NAME:-rtmpose}
+      POSE_INPUT_NAME: ${POSE_INPUT_NAME:-}
+      POSE_OUTPUT_NAME: ${POSE_OUTPUT_NAME:-}
+      RTMPOSE_ONNX_URL: ${RTMPOSE_ONNX_URL:-}
+      RTMPOSE_ONNX_PATH: ${RTMPOSE_ONNX_PATH:-/models/rtmpose/1/model.onnx}
+    volumes:
+      - ./models:/models
+    expose:
+      - "8000"
+      - "8001"
+      - "8002"
