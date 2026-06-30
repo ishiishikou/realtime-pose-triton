@@ -8,6 +8,10 @@ import type { PoseDataChannelMessage, PoseMessage } from './types';
 
 export type PoseSessionStatus = 'idle' | 'starting' | 'running' | 'stopping' | 'error';
 
+export type PoseInputSource =
+  | { type: 'camera' }
+  | { type: 'video'; url: string };
+
 const parsePoseMessage = (raw: string): PoseDataChannelMessage => JSON.parse(raw) as PoseDataChannelMessage;
 
 export const usePoseWebRtc = () => {
@@ -16,6 +20,7 @@ export const usePoseWebRtc = () => {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const activeSourceTypeRef = useRef<PoseInputSource['type'] | null>(null);
   const [status, setStatus] = useState<PoseSessionStatus>('idle');
   const [latestPose, setLatestPose] = useState<PoseMessage | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -31,25 +36,44 @@ export const usePoseWebRtc = () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     cameraStreamRef.current = null;
     if (videoRef.current) {
-      videoRef.current.srcObject = null;
+      videoRef.current.pause();
+      if (activeSourceTypeRef.current === 'camera') {
+        videoRef.current.srcObject = null;
+      }
     }
+    activeSourceTypeRef.current = null;
     setLatestPose(null);
     setErrorMessage(null);
     setStatus('idle');
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (source: PoseInputSource = { type: 'camera' }) => {
     setStatus('starting');
     setErrorMessage(null);
 
     try {
-      const cameraStream = await getCameraStream();
-      cameraStreamRef.current = cameraStream;
       const video = videoRef.current;
       if (!video) {
         throw new Error('video element is not ready');
       }
-      video.srcObject = cameraStream;
+
+      if (source.type === 'camera') {
+        const cameraStream = await getCameraStream();
+        cameraStreamRef.current = cameraStream;
+        video.loop = false;
+        video.srcObject = cameraStream;
+      } else {
+        if (!source.url) {
+          throw new Error('video file is not selected');
+        }
+        video.pause();
+        video.srcObject = null;
+        video.src = source.url;
+        video.loop = true;
+        video.currentTime = 0;
+      }
+
+      activeSourceTypeRef.current = source.type;
       await video.play();
 
       const sendCanvas = document.createElement('canvas');
@@ -61,7 +85,9 @@ export const usePoseWebRtc = () => {
       }
 
       const drawSendFrame = () => {
-        context.drawImage(video, 0, 0, SEND_WIDTH, SEND_HEIGHT);
+        if (video.readyState >= 2) {
+          context.drawImage(video, 0, 0, SEND_WIDTH, SEND_HEIGHT);
+        }
         animationFrameRef.current = requestAnimationFrame(drawSendFrame);
       };
       drawSendFrame();
