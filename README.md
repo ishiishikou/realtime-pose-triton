@@ -72,6 +72,17 @@ By default, `POSE_INPUT_NAME` and `POSE_OUTPUT_NAME` are empty so the backend us
 
 See `docs/triton.md` and `docs/rtmpose-onnx.md` for details.
 
+## CPU-only VLM sample
+
+A separate Triton sample serves `HuggingFaceTB/SmolVLM-256M-Instruct` on CPU using its quantized ONNX artifacts. It does not change the existing pose/WebRTC path.
+
+```bash
+docker compose -f docker-compose.vlm-cpu.yml up --build
+python3 examples/vlm/client.py ./path/to/image.jpg
+```
+
+See `docs/vlm-cpu-triton.md` for startup, CPU tuning, and limitations.
+
 ## Development commands
 
 ```bash
