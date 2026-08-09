@@ -4,7 +4,7 @@ import { sendWebRtcOffer } from '../api/backend';
 import { getCameraStream, SEND_FPS, SEND_HEIGHT, SEND_WIDTH } from './camera';
 import { getPeerConnectionConfiguration } from './connectionConfig';
 import { waitForIceGatheringComplete } from './ice';
-import type { PoseDataChannelMessage, PoseMessage } from './types';
+import type { PoseDataChannelMessage, PoseMessage, VlmMessage } from './types';
 
 export type PoseSessionStatus = 'idle' | 'starting' | 'running' | 'stopping' | 'error';
 
@@ -23,7 +23,9 @@ export const usePoseWebRtc = () => {
   const activeSourceTypeRef = useRef<PoseInputSource['type'] | null>(null);
   const [status, setStatus] = useState<PoseSessionStatus>('idle');
   const [latestPose, setLatestPose] = useState<PoseMessage | null>(null);
+  const [latestVlm, setLatestVlm] = useState<VlmMessage | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [vlmErrorMessage, setVlmErrorMessage] = useState<string | null>(null);
 
   const stop = useCallback(() => {
     setStatus('stopping');
@@ -43,13 +45,16 @@ export const usePoseWebRtc = () => {
     }
     activeSourceTypeRef.current = null;
     setLatestPose(null);
+    setLatestVlm(null);
     setErrorMessage(null);
+    setVlmErrorMessage(null);
     setStatus('idle');
   }, []);
 
   const start = useCallback(async (source: PoseInputSource = { type: 'camera' }) => {
     setStatus('starting');
     setErrorMessage(null);
+    setVlmErrorMessage(null);
 
     try {
       const video = videoRef.current;
@@ -117,15 +122,24 @@ export const usePoseWebRtc = () => {
         try {
           const payload = parsePoseMessage(event.data as string);
           if (payload.type === 'pose') {
-            setLatestPose(payload as PoseMessage);
+            setLatestPose(payload);
             setErrorMessage(null);
             return;
           }
+          if (payload.type === 'vlm') {
+            setLatestVlm(payload);
+            setVlmErrorMessage(null);
+            return;
+          }
+          if (payload.type === 'vlm-error') {
+            setVlmErrorMessage(payload.message);
+            return;
+          }
           if (payload.type === 'pose-error') {
-            setErrorMessage('message' in payload ? payload.message : 'Pose inference error');
+            setErrorMessage(payload.message);
           }
         } catch (error) {
-          setErrorMessage(error instanceof Error ? `Invalid pose message: ${error.message}` : 'Invalid pose message');
+          setErrorMessage(error instanceof Error ? `Invalid inference message: ${error.message}` : 'Invalid inference message');
         }
       };
       channel.onerror = () => setErrorMessage('Pose DataChannel error');
@@ -157,5 +171,15 @@ export const usePoseWebRtc = () => {
 
   useEffect(() => stop, [stop]);
 
-  return { videoRef, canvasRef, latestPose, status, errorMessage, start, stop };
+  return {
+    videoRef,
+    canvasRef,
+    latestPose,
+    latestVlm,
+    status,
+    errorMessage,
+    vlmErrorMessage,
+    start,
+    stop,
+  };
 };
