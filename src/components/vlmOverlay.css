@@ -1,0 +1,58 @@
+.vlm-result-overlay {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  width: min(560px, calc(100% - 32px));
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 18px;
+  color: #f8fbff;
+  background: rgba(2, 6, 23, 0.74);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(16px) saturate(1.35);
+}
+
+.vlm-result-overlay.error {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(69, 10, 10, 0.76);
+}
+
+.vlm-result-kicker {
+  color: #7dd3fc;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vlm-result-overlay strong {
+  font-size: 0.98rem;
+  line-height: 1.5;
+}
+
+.vlm-result-meta {
+  color: rgba(203, 213, 225, 0.7);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 640px) {
+  .vlm-result-overlay {
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    z-index: 4;
+    width: auto;
+    padding: 11px 13px;
+    border-radius: 15px;
+  }
+
+  .vlm-result-overlay strong {
+    max-height: 4.5em;
+    overflow: hidden;
+    font-size: 0.88rem;
+  }
+}

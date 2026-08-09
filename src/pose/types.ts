@@ -5,7 +5,7 @@ export type PosePoint = {
 };
 
 export type PoseMessage = {
-  type: string;
+  type: 'pose';
   frameId: number;
   sourceWidth: number;
   sourceHeight: number;
@@ -14,9 +14,22 @@ export type PoseMessage = {
 };
 
 export type PoseErrorMessage = {
-  type: string;
+  type: 'pose-error';
   frameId?: number;
   message: string;
 };
 
-export type PoseDataChannelMessage = PoseMessage | PoseErrorMessage;
+export type VlmMessage = {
+  type: 'vlm';
+  frameId: number;
+  text: string;
+  inferenceMs?: number;
+};
+
+export type VlmErrorMessage = {
+  type: 'vlm-error';
+  frameId?: number;
+  message: string;
+};
+
+export type PoseDataChannelMessage = PoseMessage | PoseErrorMessage | VlmMessage | VlmErrorMessage;
