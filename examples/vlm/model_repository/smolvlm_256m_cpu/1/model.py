@@ -184,7 +184,9 @@ class TritonPythonModel:
             if (input_ids == self.eos_token_id).all():
                 break
 
-            attention_mask = np.ones_like(input_ids)
+            attention_mask = np.ones_like(
+                np.concatenate((attention_mask, input_ids), axis=-1)
+            )
             position_ids = position_ids[:, -1:] + 1
             for index, key in enumerate(past_key_values):
                 past_key_values[key] = present_key_values[index]
