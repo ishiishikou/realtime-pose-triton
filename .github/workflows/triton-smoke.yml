@@ -228,7 +228,7 @@ jobs:
           write_solid_png("/tmp/vlm-blue.png", (0, 0, 255))
           PY
 
-          prompt="Is this image red? Answer exactly one word: RED or OTHER."
+          prompt="Classify the image using exactly one label: RED or OTHER. Use RED only if the image is red; otherwise use OTHER. Output only the label."
 
           assert_answer() {
             image="$1"
