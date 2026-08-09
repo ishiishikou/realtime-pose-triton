@@ -27,7 +27,17 @@ const createEmptyHandRaiseStatus = (): HandRaiseCheckStatus => ({
 });
 
 export const PoseWebRtcPanel = () => {
-  const { videoRef, canvasRef, latestPose, status, errorMessage, start, stop } = usePoseWebRtc();
+  const {
+    videoRef,
+    canvasRef,
+    latestPose,
+    latestVlm,
+    status,
+    errorMessage,
+    vlmErrorMessage,
+    start,
+    stop,
+  } = usePoseWebRtc();
   const [runtimeStatus, setRuntimeStatus] = useState<PoseRuntimeStatus | null>(null);
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
@@ -109,6 +119,10 @@ export const PoseWebRtcPanel = () => {
   const completedHandRaiseCount = HAND_RAISE_CHECKS.filter((check) => completedHandRaiseChecks[check.id]).length;
   const inferenceLabel = latestPose?.inferenceMs !== undefined && latestPose.inferenceMs !== null ? `${latestPose.inferenceMs} ms` : '-';
   const selectedSourceLabel = inputMode === 'camera' ? 'camera' : videoFileName ?? 'video not selected';
+  const vlmText = vlmErrorMessage ?? latestVlm?.text ?? (isRunning ? '解析中…' : '開始すると定期的に画像を解析します');
+  const vlmInferenceLabel = latestVlm?.inferenceMs !== undefined && latestVlm.inferenceMs !== null
+    ? `${Math.round(latestVlm.inferenceMs)} ms`
+    : null;
 
   const handleVideoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -200,6 +214,13 @@ export const PoseWebRtcPanel = () => {
       <div className="pose-stage">
         <video ref={videoRef} src={inputMode === 'video' ? videoFileUrl ?? undefined : undefined} className="pose-video" playsInline muted autoPlay />
         <canvas ref={canvasRef} className="pose-canvas" />
+
+        <div className={vlmErrorMessage ? 'vlm-result-overlay error' : 'vlm-result-overlay'} aria-live="polite">
+          <span className="vlm-result-kicker">VLM解析</span>
+          <strong>{vlmText}</strong>
+          {vlmInferenceLabel ? <span className="vlm-result-meta">frame {latestVlm?.frameId} / {vlmInferenceLabel}</span> : null}
+        </div>
+
         <div className="pose-checklist-overlay">
           <button
             className="pose-checklist-summary"
