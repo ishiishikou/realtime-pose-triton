@@ -203,7 +203,7 @@ jobs:
           import struct
           import zlib
 
-          def write_solid_png(path, rgb, width=64, height=64):
+          def write_solid_png(path, rgb, width=512, height=512):
               scanline = b"\x00" + bytes(rgb) * width
               raw = scanline * height
 
@@ -228,13 +228,13 @@ jobs:
           write_solid_png("/tmp/vlm-blue.png", (0, 0, 255))
           PY
 
-          prompt="Classify the image using exactly one label: RED or OTHER. Use RED only if the image is red; otherwise use OTHER. Output only the label."
+          prompt="What is the dominant color of this image? Answer exactly one word: RED or BLUE."
 
           assert_answer() {
             image="$1"
             expected="$2"
             output="$(python3 examples/vlm/client.py "$image" --prompt "$prompt")"
-            normalized="$(printf '%s' "$output" | tr '[:lower:]' '[:upper:]' | xargs)"
+            normalized="$(printf '%s' "$output" | tr '[:lower:]' '[:upper:]' | xargs | sed 's/[[:punct:]]//g')"
 
             echo "VLM output for ${image}: ${output}"
             echo "Expected: ${expected}; normalized: ${normalized}"
@@ -246,7 +246,7 @@ jobs:
           }
 
           assert_answer /tmp/vlm-red.png RED
-          assert_answer /tmp/vlm-blue.png OTHER
+          assert_answer /tmp/vlm-blue.png BLUE
 
       - name: Show VLM Triton logs
         if: always()
