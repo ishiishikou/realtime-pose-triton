@@ -9,10 +9,13 @@ on:
         default: https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-t_simcc-body7_pt-body7_420e-256x192-026a1439_20230504.zip
         type: string
       model_name:
-        description: Triton model name
-        required: false
+        description: Triton smoke target
+        required: true
         default: rtmpose
-        type: string
+        type: choice
+        options:
+          - rtmpose
+          - smolvlm_256m_cpu
 
 permissions:
   contents: read
@@ -24,7 +27,7 @@ jobs:
   empty-triton-startup:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ inputs.onnx_url == '' }}
+    if: ${{ inputs.model_name != 'smolvlm_256m_cpu' && inputs.onnx_url == '' }}
     steps:
       - name: Start published Triton image without ONNX
         run: |
@@ -61,7 +64,7 @@ jobs:
   onnx-triton-startup:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ inputs.onnx_url != '' }}
+    if: ${{ inputs.model_name != 'smolvlm_256m_cpu' && inputs.onnx_url != '' }}
     steps:
       - name: Prepare ONNX model repository
         env:
@@ -144,3 +147,75 @@ jobs:
       - name: Stop Triton
         if: always()
         run: docker rm -f triton-onnx || true
+
+  vlm-cpu-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: ${{ inputs.model_name == 'smolvlm_256m_cpu' }}
+    env:
+      VLM_MAX_NEW_TOKENS: "8"
+      VLM_ORT_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate VLM Compose configuration
+        run: docker compose -f docker-compose.vlm-cpu.yml config > /tmp/vlm-compose.yml
+
+      - name: Build and start CPU VLM Triton
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.vlm-cpu.yml up -d --build
+
+      - name: Wait for VLM model readiness
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 600); do
+            if ! docker compose -f docker-compose.vlm-cpu.yml ps --status running --services | grep -qx vlm-triton; then
+              echo "VLM Triton container exited before model readiness."
+              docker compose -f docker-compose.vlm-cpu.yml ps -a
+              docker compose -f docker-compose.vlm-cpu.yml logs vlm-triton || true
+              exit 1
+            fi
+
+            if curl -fsS http://localhost:8100/v2/models/smolvlm_256m_cpu/ready; then
+              ready=1
+              break
+            fi
+
+            if [ $((i % 30)) -eq 0 ]; then
+              echo "Waiting for VLM model readiness... attempt ${i}/600"
+              docker compose -f docker-compose.vlm-cpu.yml logs --tail 80 vlm-triton || true
+            fi
+            sleep 2
+          done
+
+          if [ "${ready}" != "1" ]; then
+            echo "VLM model did not become ready before timeout."
+            docker compose -f docker-compose.vlm-cpu.yml logs vlm-triton || true
+            exit 1
+          fi
+
+      - name: Run end-to-end landmark assertion
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" \
+            -o /tmp/vlm-landmark.jpg
+
+          output="$(python3 examples/vlm/client.py /tmp/vlm-landmark.jpg \
+            --prompt "What landmark is shown in this image? Answer briefly.")"
+
+          echo "VLM output: ${output}"
+          if ! printf '%s' "$output" | grep -Eiq 'liberty'; then
+            echo "Expected the VLM response to identify the Statue of Liberty."
+            exit 1
+          fi
+
+      - name: Show VLM Triton logs
+        if: always()
+        run: docker compose -f docker-compose.vlm-cpu.yml logs vlm-triton || true
+
+      - name: Stop VLM Triton
+        if: always()
+        run: docker compose -f docker-compose.vlm-cpu.yml down -v || true

@@ -1,0 +1,25 @@
+name: realtime-pose-triton-vlm-cpu
+
+services:
+  vlm-triton:
+    build:
+      context: .
+      dockerfile: vlm-cpu.Dockerfile
+    environment:
+      VLM_MODEL_ID: ${VLM_MODEL_ID:-HuggingFaceTB/SmolVLM-256M-Instruct}
+      VLM_MAX_NEW_TOKENS: ${VLM_MAX_NEW_TOKENS:-48}
+      VLM_ORT_THREADS: ${VLM_ORT_THREADS:-0}
+      HF_HOME: /cache/huggingface
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ./examples/vlm/model_repository:/models:ro
+      - vlm_hf_cache:/cache/huggingface
+    ports:
+      - "8100:8000"
+      - "8101:8001"
+      - "8102:8002"
+    shm_size: "1gb"
+
+volumes:
+  vlm_hf_cache:

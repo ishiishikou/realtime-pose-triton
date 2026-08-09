@@ -1,0 +1,31 @@
+name: "smolvlm_256m_cpu"
+backend: "python"
+max_batch_size: 0
+
+input [
+  {
+    name: "IMAGE_BASE64"
+    data_type: TYPE_STRING
+    dims: [1]
+  },
+  {
+    name: "PROMPT"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+
+output [
+  {
+    name: "TEXT"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+
+instance_group [
+  {
+    kind: KIND_CPU
+    count: 1
+  }
+]
