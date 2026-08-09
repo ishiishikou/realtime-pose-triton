@@ -24,6 +24,10 @@ services:
       POSE_TARGET_FPS: ${POSE_TARGET_FPS:-10}
       # Real Triton inference is the default. Set POSE_MOCK_MODE=1 for camera/WebRTC-only local checks.
       POSE_MOCK_MODE: ${POSE_MOCK_MODE:-0}
+      VLM_TRITON_GRPC_URL: vlm-triton:8001
+      VLM_MODEL_NAME: ${VLM_MODEL_NAME:-smolvlm_256m_cpu}
+      VLM_TARGET_INTERVAL_SECONDS: ${VLM_TARGET_INTERVAL_SECONDS:-30}
+      VLM_PROMPT: ${VLM_PROMPT:-Describe the main person and what they are doing in one short sentence.}
     ports:
       - "8080:8080"
 
@@ -43,3 +47,26 @@ services:
       - "8000:8000"
       - "8001:8001"
       - "8002:8002"
+
+  vlm-triton:
+    build:
+      context: .
+      dockerfile: vlm-cpu.Dockerfile
+    environment:
+      VLM_MODEL_ID: ${VLM_MODEL_ID:-HuggingFaceTB/SmolVLM-256M-Instruct}
+      VLM_MAX_NEW_TOKENS: ${VLM_MAX_NEW_TOKENS:-24}
+      VLM_ORT_THREADS: ${VLM_ORT_THREADS:-2}
+      HF_HOME: /cache/huggingface
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ./examples/vlm/model_repository:/models:ro
+      - vlm_hf_cache:/cache/huggingface
+    ports:
+      - "8100:8000"
+      - "8101:8001"
+      - "8102:8002"
+    shm_size: "1gb"
+
+volumes:
+  vlm_hf_cache:
