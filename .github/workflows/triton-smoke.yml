@@ -196,57 +196,21 @@ jobs:
             exit 1
           fi
 
-      - name: Run end-to-end color assertions
+      - name: Run end-to-end landmark assertion
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import struct
-          import zlib
+          curl -fsSL --retry 3 \
+            "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" \
+            -o /tmp/vlm-landmark.jpg
 
-          def write_solid_png(path, rgb, width=512, height=512):
-              scanline = b"\x00" + bytes(rgb) * width
-              raw = scanline * height
+          output="$(python3 examples/vlm/client.py /tmp/vlm-landmark.jpg \
+            --prompt "What landmark is shown in this image? Answer briefly.")"
 
-              def chunk(kind, data):
-                  body = kind + data
-                  return (
-                      struct.pack(">I", len(data))
-                      + body
-                      + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
-                  )
-
-              png = (
-                  b"\x89PNG\r\n\x1a\n"
-                  + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-                  + chunk(b"IDAT", zlib.compress(raw))
-                  + chunk(b"IEND", b"")
-              )
-              with open(path, "wb") as file:
-                  file.write(png)
-
-          write_solid_png("/tmp/vlm-red.png", (255, 0, 0))
-          write_solid_png("/tmp/vlm-blue.png", (0, 0, 255))
-          PY
-
-          prompt="What is the dominant color of this image? Answer exactly one word: RED or BLUE."
-
-          assert_answer() {
-            image="$1"
-            expected="$2"
-            output="$(python3 examples/vlm/client.py "$image" --prompt "$prompt")"
-            normalized="$(printf '%s' "$output" | tr '[:lower:]' '[:upper:]' | xargs | sed 's/[[:punct:]]//g')"
-
-            echo "VLM output for ${image}: ${output}"
-            echo "Expected: ${expected}; normalized: ${normalized}"
-
-            if [ "$normalized" != "$expected" ]; then
-              echo "Unexpected VLM answer for ${image}."
-              exit 1
-            fi
-          }
-
-          assert_answer /tmp/vlm-red.png RED
-          assert_answer /tmp/vlm-blue.png BLUE
+          echo "VLM output: ${output}"
+          if ! printf '%s' "$output" | grep -Eiq 'liberty'; then
+            echo "Expected the VLM response to identify the Statue of Liberty."
+            exit 1
+          fi
 
       - name: Show VLM Triton logs
         if: always()
