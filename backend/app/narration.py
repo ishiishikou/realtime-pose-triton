@@ -17,14 +17,15 @@ from PIL import Image
 
 router = APIRouter()
 _STREAM_PATH_PATTERN = re.compile(r'^[A-Za-z0-9._/-]+$')
+_RTSP_URL_PATTERN = re.compile(r'(?i)rtsp://[^\s\]\[(){}<>"\']+')
 
 
 def _epoch_ms() -> float:
     return time.time_ns() / 1_000_000
 
 
-def _redact_rtsp_credentials(message: str) -> str:
-    return re.sub(r'(?i)(rtsp://)([^/@:]+):([^/@]+)@', r'\1***:***@', message)
+def _redact_rtsp_details(message: str) -> str:
+    return _RTSP_URL_PATTERN.sub('rtsp://***', message)
 
 
 def _normalize_stream_path(stream_path: str, allowed_prefix: str) -> str:
@@ -177,7 +178,7 @@ class NarrationStreamService:
             except Exception as exc:
                 with self._lock:
                     self._source_connected = False
-                    self._last_error = _redact_rtsp_credentials(f'{type(exc).__name__}: {exc}')
+                    self._last_error = _redact_rtsp_details(f'{type(exc).__name__}: {exc}')
                 if self._stop_event.wait(self.reconnect_seconds):
                     return
 
@@ -215,7 +216,7 @@ class NarrationStreamService:
                         self._last_error = None
                     await self._broadcast(payload)
                 except Exception as exc:
-                    error_message = _redact_rtsp_credentials(f'{type(exc).__name__}: {exc}')
+                    error_message = _redact_rtsp_details(f'{type(exc).__name__}: {exc}')
                     with self._lock:
                         self._last_error = error_message
                     await self._broadcast(
@@ -304,35 +305,45 @@ class NarrationManager:
     def normalize_stream_path(self, stream_path: str) -> str:
         return _normalize_stream_path(stream_path, self.allowed_path_prefix)
 
+    def _create_service(self, normalized: str) -> NarrationStreamService:
+        rtsp_url = f'{self.rtsp_base_url}/{normalized}' if self.rtsp_base_url else ''
+        return NarrationStreamService(
+            stream_path=normalized,
+            rtsp_url=rtsp_url,
+            rtsp_transport=self.rtsp_transport,
+            reconnect_seconds=self.reconnect_seconds,
+            interval_seconds=self.interval_seconds,
+            prompt=self.prompt,
+            vlm_triton_grpc_url=self.vlm_triton_grpc_url,
+            vlm_model_name=self.vlm_model_name,
+            jpeg_quality=self.jpeg_quality,
+        )
+
     async def get_or_create(self, stream_path: str) -> NarrationStreamService:
         normalized = self.normalize_stream_path(stream_path)
         async with self._lock:
             service = self._services.get(normalized)
-            if service is not None:
-                return service
-
-            rtsp_url = f'{self.rtsp_base_url}/{normalized}' if self.rtsp_base_url else ''
-            service = NarrationStreamService(
-                stream_path=normalized,
-                rtsp_url=rtsp_url,
-                rtsp_transport=self.rtsp_transport,
-                reconnect_seconds=self.reconnect_seconds,
-                interval_seconds=self.interval_seconds,
-                prompt=self.prompt,
-                vlm_triton_grpc_url=self.vlm_triton_grpc_url,
-                vlm_model_name=self.vlm_model_name,
-                jpeg_quality=self.jpeg_quality,
-            )
-            self._services[normalized] = service
+            if service is None:
+                service = self._create_service(normalized)
+                self._services[normalized] = service
             return service
+
+    async def status(self, stream_path: str) -> dict[str, Any]:
+        normalized = self.normalize_stream_path(stream_path)
+        async with self._lock:
+            service = self._services.get(normalized)
+        if service is None:
+            service = self._create_service(normalized)
+        return service.status(self.configured)
 
     async def release_if_unused(self, stream_path: str, service: NarrationStreamService) -> None:
         if service.client_count > 0:
             return
-        await service.stop()
         async with self._lock:
-            if self._services.get(stream_path) is service and service.client_count == 0:
-                self._services.pop(stream_path, None)
+            if self._services.get(stream_path) is not service or service.client_count > 0:
+                return
+            self._services.pop(stream_path, None)
+        await service.stop()
 
     async def shutdown(self) -> None:
         async with self._lock:
@@ -354,8 +365,7 @@ def _stream_path_or_http_400(stream_path: str) -> str:
 @router.get('/narration/status')
 async def narration_status(stream_path: str) -> dict[str, Any]:
     normalized = _stream_path_or_http_400(stream_path)
-    service = await narration_manager.get_or_create(normalized)
-    return service.status(narration_manager.configured)
+    return await narration_manager.status(normalized)
 
 
 @router.websocket('/narration/ws')
