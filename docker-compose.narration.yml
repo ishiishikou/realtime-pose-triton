@@ -3,6 +3,7 @@ name: realtime-pose-triton-narration
 services:
   web:
     build:
+      context: .
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
         VITE_WEBRTC_CONFIG: ${VITE_WEBRTC_CONFIG:-}
@@ -10,8 +11,17 @@ services:
         VITE_MEDIAMTX_STREAM_PATH: ${VITE_MEDIAMTX_STREAM_PATH:-live/iphone-001}
         VITE_MEDIAMTX_PUBLISHER_USER: ${VITE_MEDIAMTX_PUBLISHER_USER:-poc-publisher}
         VITE_MEDIAMTX_PUBLISHER_PASSWORD: ${VITE_MEDIAMTX_PUBLISHER_PASSWORD:-poc-publisher-pass}
+    volumes:
+      - ./docker/nginx.https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "5173:443"
+      - "5080:80"
+    depends_on:
+      - backend
 
   backend:
+    build: ./backend
     environment:
       NARRATION_RTSP_BASE_URL: ${NARRATION_RTSP_BASE_URL:-}
       NARRATION_ALLOWED_PATH_PREFIX: ${NARRATION_ALLOWED_PATH_PREFIX:-live/}
@@ -22,6 +32,8 @@ services:
       VLM_NARRATION_INTERVAL_SECONDS: ${VLM_NARRATION_INTERVAL_SECONDS:-3}
       VLM_NARRATION_PROMPT: ${VLM_NARRATION_PROMPT:-Describe what is happening in this image in one short sentence.}
       VLM_NARRATION_JPEG_QUALITY: ${VLM_NARRATION_JPEG_QUALITY:-80}
+    expose:
+      - "8080"
     depends_on:
       - vlm-triton
 
