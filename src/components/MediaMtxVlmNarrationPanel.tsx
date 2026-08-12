@@ -42,7 +42,7 @@ export const MediaMtxVlmNarrationPanel = () => {
   useEffect(() => {
     const refresh = async () => {
       try {
-        const nextStatus = await fetchNarrationStatus();
+        const nextStatus = await fetchNarrationStatus(streamPath);
         setRuntimeStatus(nextStatus);
         setRuntimeStatusError(null);
       } catch (error) {
@@ -53,7 +53,7 @@ export const MediaMtxVlmNarrationPanel = () => {
     void refresh();
     const intervalId = window.setInterval(refresh, 2000);
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [streamPath]);
 
   useEffect(() => {
     const perfWindow = window as PerfWindow;
@@ -102,7 +102,7 @@ export const MediaMtxVlmNarrationPanel = () => {
       streamPath,
       username: publisherUser,
       password: publisherPassword,
-    });
+    }).catch(() => undefined);
   };
 
   return (
@@ -165,7 +165,7 @@ export const MediaMtxVlmNarrationPanel = () => {
           />
         </label>
         <p className="source-note narration-source-note">
-          backendの <code>NARRATION_RTSP_URL</code> は、このstream pathと同じMediaMTX pathを参照してください。表示中の認証情報はローカルPoC用example値で、ブラウザ内だけで使用し保存しません。
+          backendはサーバ側の <code>NARRATION_RTSP_BASE_URL</code> にこのstream pathを連結してMediaMTXを購読します。表示中の認証情報はローカルPoC用example値で、ブラウザ内だけで使用し保存しません。
         </p>
       </div>
 
@@ -201,6 +201,7 @@ export const MediaMtxVlmNarrationPanel = () => {
       </div>
 
       <div className="metrics-grid">
+        <p className="note">stream: {runtimeStatus?.stream_path ?? streamPath}</p>
         <p className="note">frame: {latestNarration?.frameId ?? runtimeStatus?.latest_frame_id ?? '-'}</p>
         <p className="note">RTSP received: {formatTimestamp(latestNarration?.rtspReceiveTsMs)}</p>
         <p className="note">VLM inference: {inferenceLabel}</p>
