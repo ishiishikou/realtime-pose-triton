@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from app.narration import NarrationManager
+from app.narration import NarrationManager, _redact_rtsp_details
 
 
 def test_narration_status_does_not_expose_rtsp_base_or_credentials(monkeypatch):
@@ -60,3 +60,16 @@ def test_narration_rejects_unsafe_or_out_of_scope_paths(monkeypatch, stream_path
 
     with pytest.raises(ValueError):
         manager.normalize_stream_path(stream_path)
+
+
+def test_rtsp_error_redaction_hides_credentials_and_host():
+    message = (
+        'Could not open rtsp://example-user:example-password@private-host.example:8554/live/camera-001'
+    )
+
+    redacted = _redact_rtsp_details(message)
+
+    assert 'example-user' not in redacted
+    assert 'example-password' not in redacted
+    assert 'private-host.example' not in redacted
+    assert 'rtsp://***' in redacted
