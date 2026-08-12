@@ -11,11 +11,12 @@ from typing import Any
 import av
 import numpy as np
 import tritonclient.grpc as grpcclient
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from PIL import Image
 
 
 router = APIRouter()
+_STREAM_PATH_PATTERN = re.compile(r'^[A-Za-z0-9._/-]+$')
 
 
 def _epoch_ms() -> float:
@@ -26,6 +27,23 @@ def _redact_rtsp_credentials(message: str) -> str:
     return re.sub(r'(?i)(rtsp://)([^/@:]+):([^/@]+)@', r'\1***:***@', message)
 
 
+def _normalize_stream_path(stream_path: str, allowed_prefix: str) -> str:
+    normalized = stream_path.strip().strip('/')
+    if not normalized:
+        raise ValueError('stream_path is required')
+    if not _STREAM_PATH_PATTERN.fullmatch(normalized):
+        raise ValueError('stream_path contains unsupported characters')
+    if any(segment in {'.', '..'} for segment in normalized.split('/')):
+        raise ValueError('stream_path contains an invalid path segment')
+
+    normalized_prefix = allowed_prefix.strip().strip('/')
+    if normalized_prefix and not (
+        normalized == normalized_prefix or normalized.startswith(f'{normalized_prefix}/')
+    ):
+        raise ValueError(f'stream_path must be under {normalized_prefix}/')
+    return normalized
+
+
 @dataclass(frozen=True)
 class LatestFrame:
     frame_id: int
@@ -33,19 +51,29 @@ class LatestFrame:
     rgb: np.ndarray
 
 
-class NarrationService:
-    def __init__(self) -> None:
-        self.rtsp_url = os.getenv('NARRATION_RTSP_URL', '').strip()
-        self.rtsp_transport = os.getenv('NARRATION_RTSP_TRANSPORT', 'tcp').strip() or 'tcp'
-        self.reconnect_seconds = max(float(os.getenv('NARRATION_RTSP_RECONNECT_SECONDS', '2')), 0.5)
-        self.interval_seconds = max(float(os.getenv('VLM_NARRATION_INTERVAL_SECONDS', '3')), 0.5)
-        self.prompt = os.getenv(
-            'VLM_NARRATION_PROMPT',
-            'Describe what is happening in this image in one short sentence.',
-        ).strip()
-        self.vlm_triton_grpc_url = os.getenv('VLM_TRITON_GRPC_URL', 'vlm-triton:8001').strip()
-        self.vlm_model_name = os.getenv('VLM_MODEL_NAME', 'smolvlm_256m_cpu').strip()
-        self.jpeg_quality = min(max(int(os.getenv('VLM_NARRATION_JPEG_QUALITY', '80')), 40), 95)
+class NarrationStreamService:
+    def __init__(
+        self,
+        *,
+        stream_path: str,
+        rtsp_url: str,
+        rtsp_transport: str,
+        reconnect_seconds: float,
+        interval_seconds: float,
+        prompt: str,
+        vlm_triton_grpc_url: str,
+        vlm_model_name: str,
+        jpeg_quality: int,
+    ) -> None:
+        self.stream_path = stream_path
+        self.rtsp_url = rtsp_url
+        self.rtsp_transport = rtsp_transport
+        self.reconnect_seconds = reconnect_seconds
+        self.interval_seconds = interval_seconds
+        self.prompt = prompt
+        self.vlm_triton_grpc_url = vlm_triton_grpc_url
+        self.vlm_model_name = vlm_model_name
+        self.jpeg_quality = jpeg_quality
 
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -60,11 +88,12 @@ class NarrationService:
         self._last_error: str | None = None
         self._last_inference_ms: float | None = None
 
-    def status(self) -> dict[str, Any]:
+    def status(self, configured: bool) -> dict[str, Any]:
         with self._lock:
             latest_frame = self._latest_frame
             return {
-                'configured': bool(self.rtsp_url),
+                'configured': configured,
+                'stream_path': self.stream_path,
                 'source_connected': self._source_connected,
                 'rtsp_transport': self.rtsp_transport,
                 'interval_seconds': self.interval_seconds,
@@ -78,18 +107,25 @@ class NarrationService:
                 'websocket_clients': len(self._clients),
             }
 
+    @property
+    def client_count(self) -> int:
+        return len(self._clients)
+
     async def start(self) -> None:
-        if not self.rtsp_url or self._reader_thread is not None:
+        if self._reader_thread is not None:
             return
 
         self._stop_event.clear()
         self._reader_thread = threading.Thread(
             target=self._reader_loop,
-            name='narration-rtsp-reader',
+            name=f'narration-rtsp-reader-{self.stream_path.replace("/", "-")}',
             daemon=True,
         )
         self._reader_thread.start()
-        self._worker_task = asyncio.create_task(self._inference_loop(), name='narration-vlm-worker')
+        self._worker_task = asyncio.create_task(
+            self._inference_loop(),
+            name=f'narration-vlm-worker-{self.stream_path.replace("/", "-")}',
+        )
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -163,6 +199,7 @@ class NarrationService:
                     result_send_ts_ms = _epoch_ms()
                     payload: dict[str, Any] = {
                         'type': 'narration',
+                        'streamPath': self.stream_path,
                         'frameId': latest.frame_id,
                         'rtspReceiveTsMs': round(latest.received_ts_ms, 3),
                         'inferenceStartTsMs': round(inference_started_ts_ms, 3),
@@ -181,7 +218,13 @@ class NarrationService:
                     error_message = _redact_rtsp_credentials(f'{type(exc).__name__}: {exc}')
                     with self._lock:
                         self._last_error = error_message
-                    await self._broadcast({'type': 'narration-error', 'message': error_message})
+                    await self._broadcast(
+                        {
+                            'type': 'narration-error',
+                            'streamPath': self.stream_path,
+                            'message': error_message,
+                        }
+                    )
 
             elapsed = time.monotonic() - cycle_started
             await asyncio.sleep(max(self.interval_seconds - elapsed, 0.05))
@@ -214,10 +257,12 @@ class NarrationService:
             return value.decode('utf-8').strip()
         return str(value).strip()
 
-    async def add_client(self, websocket: WebSocket) -> None:
+    async def add_client(self, websocket: WebSocket, configured: bool) -> None:
         await websocket.accept()
         self._clients.add(websocket)
-        await websocket.send_json({'type': 'narration-status', **self.status()})
+        if configured:
+            await self.start()
+        await websocket.send_json({'type': 'narration-status', **self.status(configured)})
         if self._last_payload is not None:
             await websocket.send_json(self._last_payload)
 
@@ -235,21 +280,101 @@ class NarrationService:
             self._clients.discard(websocket)
 
 
-narration_service = NarrationService()
+class NarrationManager:
+    def __init__(self) -> None:
+        self.rtsp_base_url = os.getenv('NARRATION_RTSP_BASE_URL', '').strip().rstrip('/')
+        self.allowed_path_prefix = os.getenv('NARRATION_ALLOWED_PATH_PREFIX', 'live/').strip()
+        self.rtsp_transport = os.getenv('NARRATION_RTSP_TRANSPORT', 'tcp').strip() or 'tcp'
+        self.reconnect_seconds = max(float(os.getenv('NARRATION_RTSP_RECONNECT_SECONDS', '2')), 0.5)
+        self.interval_seconds = max(float(os.getenv('VLM_NARRATION_INTERVAL_SECONDS', '3')), 0.5)
+        self.prompt = os.getenv(
+            'VLM_NARRATION_PROMPT',
+            'Describe what is happening in this image in one short sentence.',
+        ).strip()
+        self.vlm_triton_grpc_url = os.getenv('VLM_TRITON_GRPC_URL', 'vlm-triton:8001').strip()
+        self.vlm_model_name = os.getenv('VLM_MODEL_NAME', 'smolvlm_256m_cpu').strip()
+        self.jpeg_quality = min(max(int(os.getenv('VLM_NARRATION_JPEG_QUALITY', '80')), 40), 95)
+        self._services: dict[str, NarrationStreamService] = {}
+        self._lock = asyncio.Lock()
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.rtsp_base_url)
+
+    def normalize_stream_path(self, stream_path: str) -> str:
+        return _normalize_stream_path(stream_path, self.allowed_path_prefix)
+
+    async def get_or_create(self, stream_path: str) -> NarrationStreamService:
+        normalized = self.normalize_stream_path(stream_path)
+        async with self._lock:
+            service = self._services.get(normalized)
+            if service is not None:
+                return service
+
+            rtsp_url = f'{self.rtsp_base_url}/{normalized}' if self.rtsp_base_url else ''
+            service = NarrationStreamService(
+                stream_path=normalized,
+                rtsp_url=rtsp_url,
+                rtsp_transport=self.rtsp_transport,
+                reconnect_seconds=self.reconnect_seconds,
+                interval_seconds=self.interval_seconds,
+                prompt=self.prompt,
+                vlm_triton_grpc_url=self.vlm_triton_grpc_url,
+                vlm_model_name=self.vlm_model_name,
+                jpeg_quality=self.jpeg_quality,
+            )
+            self._services[normalized] = service
+            return service
+
+    async def release_if_unused(self, stream_path: str, service: NarrationStreamService) -> None:
+        if service.client_count > 0:
+            return
+        await service.stop()
+        async with self._lock:
+            if self._services.get(stream_path) is service and service.client_count == 0:
+                self._services.pop(stream_path, None)
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            services = list(self._services.values())
+            self._services.clear()
+        await asyncio.gather(*(service.stop() for service in services), return_exceptions=True)
+
+
+narration_manager = NarrationManager()
+
+
+def _stream_path_or_http_400(stream_path: str) -> str:
+    try:
+        return narration_manager.normalize_stream_path(stream_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get('/narration/status')
-def narration_status() -> dict[str, Any]:
-    return narration_service.status()
+async def narration_status(stream_path: str) -> dict[str, Any]:
+    normalized = _stream_path_or_http_400(stream_path)
+    service = await narration_manager.get_or_create(normalized)
+    return service.status(narration_manager.configured)
 
 
 @router.websocket('/narration/ws')
-async def narration_websocket(websocket: WebSocket) -> None:
-    await narration_service.add_client(websocket)
+async def narration_websocket(websocket: WebSocket, stream_path: str) -> None:
+    try:
+        normalized = narration_manager.normalize_stream_path(stream_path)
+    except ValueError:
+        await websocket.close(code=1008, reason='invalid stream_path')
+        return
+
+    service = await narration_manager.get_or_create(normalized)
+    await service.add_client(websocket, narration_manager.configured)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        narration_service.remove_client(websocket)
+        pass
     except Exception:
-        narration_service.remove_client(websocket)
+        pass
+    finally:
+        service.remove_client(websocket)
+        await narration_manager.release_if_unused(normalized, service)
