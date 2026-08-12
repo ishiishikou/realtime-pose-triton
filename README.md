@@ -46,9 +46,11 @@ VLMナレーション経路ではFastAPI/aiortcをWebRTC終端に使用しませ
 - Optional ONNX startup download
 - MediaMTX WHIP publisher UI
 - MediaMTX RTSP reader for VLM narration
+- stream pathごとの独立RTSP reader / WebSocket
 - Latest-frame-only VLM scheduling without inference backlog
 - SmolVLM narration delivery over WebSocket
 - Performance-oriented timestamps for RTSP receive / VLM inference / result send
+- `mediamtx-playground` performance runner向けapplication hook
 
 ## Setup
 
@@ -107,18 +109,15 @@ See `docs/vlm-cpu-triton.md` for startup, CPU tuning, and limitations.
 
 ## MediaMTX + VLMリアルタイムナレーション
 
-スマートフォン映像をMediaMTXへWebRTC / WHIPでpublishし、backendが同じstreamをRTSPで購読します。RTSP readerは映像を継続decodeし、VLM workerは既定で3秒ごとにその時点の最新フレームだけをSmolVLMへ渡します。
+スマートフォン映像をMediaMTXへWebRTC / WHIPでpublishし、backendが同じstream pathをRTSPで購読します。RTSP readerは映像を継続decodeし、VLM workerは既定で3秒ごとにその時点の最新フレームだけをSmolVLMへ渡します。
 
-VLM推論が更新間隔より遅い場合でも古いフレームをキューへ積まず、次回は最新フレームへ追従します。
+VLM推論が更新間隔より遅い場合でも古いフレームをキューへ積まず、次回は最新フレームへ追従します。複数クライアントの性能測定に合わせ、`live/` 配下のstream pathごとにreaderとWebSocketを分離できます。
 
-既存HTTPS構成へVLMサービスを重ねて起動します。
+ナレーション確認用ComposeはRTMPose用Tritonを起動せず、HTTPS web + backend + CPU-only VLM Tritonだけを起動します。
 
 ```bash
 COMPOSE_PROJECT_NAME=rtpose-narration \
-  docker compose \
-    -f docker-compose.https.yml \
-    -f docker-compose.narration.yml \
-    up -d --build
+  docker compose -f docker-compose.narration.yml up -d --build
 ```
 
 スマートフォンから直接ナレーション画面を開く場合:
@@ -127,9 +126,9 @@ COMPOSE_PROJECT_NAME=rtpose-narration \
 https://<host-lan-ip>:5173/?mode=narration
 ```
 
-外部MediaMTXとのDockerネットワーク接続、RTSP設定、スマートフォンでの確認手順は `docs/mediamtx-vlm-narration.md` を参照してください。
+外部MediaMTXとのDockerネットワーク接続、RTSP設定、スマートフォンでの確認手順、performance runnerとの契約は `docs/mediamtx-vlm-narration.md` を参照してください。
 
-実RTSP URLや認証情報は `.env` / `.env.local` にのみ置き、public repositoryへ登録しません。
+実RTSP base URLや認証情報は `.env` / `.env.local` にのみ置き、public repositoryへ登録しません。
 
 ## Development commands
 
