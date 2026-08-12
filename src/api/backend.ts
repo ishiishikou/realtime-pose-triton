@@ -35,6 +35,7 @@ export type PoseRuntimeStatus = {
 
 export type NarrationRuntimeStatus = {
   configured: boolean;
+  stream_path: string;
   source_connected: boolean;
   rtsp_transport: string;
   interval_seconds: number;
@@ -50,6 +51,7 @@ export type NarrationRuntimeStatus = {
 
 export type NarrationMessage = {
   type: 'narration';
+  streamPath: string;
   frameId: number;
   rtspReceiveTsMs: number;
   inferenceStartTsMs: number;
@@ -61,6 +63,7 @@ export type NarrationMessage = {
 
 export type NarrationErrorMessage = {
   type: 'narration-error';
+  streamPath?: string;
   message: string;
 };
 
@@ -95,20 +98,21 @@ export const fetchPoseStatus = async (): Promise<PoseRuntimeStatus> => {
   return (await response.json()) as PoseRuntimeStatus;
 };
 
-export const fetchNarrationStatus = async (): Promise<NarrationRuntimeStatus> => {
-  const response = await fetch(`${API_BASE_URL}/narration/status`);
+export const fetchNarrationStatus = async (streamPath: string): Promise<NarrationRuntimeStatus> => {
+  const query = new URLSearchParams({ stream_path: streamPath });
+  const response = await fetch(`${API_BASE_URL}/narration/status?${query.toString()}`);
   if (!response.ok) {
     throw new Error(`Narration status failed: ${response.status}`);
   }
   return (await response.json()) as NarrationRuntimeStatus;
 };
 
-export const getNarrationWebSocketUrl = (): string => {
+export const getNarrationWebSocketUrl = (streamPath: string): string => {
   const url = new URL(API_BASE_URL, window.location.href);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const basePath = url.pathname.replace(/\/$/, '');
   url.pathname = `${basePath}/narration/ws`;
-  url.search = '';
+  url.search = new URLSearchParams({ stream_path: streamPath }).toString();
   url.hash = '';
   return url.toString();
 };
