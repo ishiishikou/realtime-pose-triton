@@ -1,0 +1,46 @@
+name: realtime-pose-triton-narration
+
+services:
+  web:
+    build:
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_WEBRTC_CONFIG: ${VITE_WEBRTC_CONFIG:-}
+        VITE_MEDIAMTX_WEBRTC_BASE_URL: ${VITE_MEDIAMTX_WEBRTC_BASE_URL:-}
+        VITE_MEDIAMTX_STREAM_PATH: ${VITE_MEDIAMTX_STREAM_PATH:-live/iphone-001}
+
+  backend:
+    environment:
+      NARRATION_RTSP_URL: ${NARRATION_RTSP_URL:-}
+      NARRATION_RTSP_TRANSPORT: ${NARRATION_RTSP_TRANSPORT:-tcp}
+      NARRATION_RTSP_RECONNECT_SECONDS: ${NARRATION_RTSP_RECONNECT_SECONDS:-2}
+      VLM_TRITON_GRPC_URL: vlm-triton:8001
+      VLM_MODEL_NAME: ${VLM_MODEL_NAME:-smolvlm_256m_cpu}
+      VLM_NARRATION_INTERVAL_SECONDS: ${VLM_NARRATION_INTERVAL_SECONDS:-3}
+      VLM_NARRATION_PROMPT: ${VLM_NARRATION_PROMPT:-Describe what is happening in this image in one short sentence.}
+      VLM_NARRATION_JPEG_QUALITY: ${VLM_NARRATION_JPEG_QUALITY:-80}
+    depends_on:
+      - vlm-triton
+
+  vlm-triton:
+    build:
+      context: .
+      dockerfile: vlm-cpu.Dockerfile
+    environment:
+      VLM_MODEL_ID: ${VLM_MODEL_ID:-HuggingFaceTB/SmolVLM-256M-Instruct}
+      VLM_MAX_NEW_TOKENS: ${VLM_MAX_NEW_TOKENS:-24}
+      VLM_ORT_THREADS: ${VLM_ORT_THREADS:-0}
+      HF_HOME: /cache/huggingface
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ./examples/vlm/model_repository:/models:ro
+      - vlm_narration_hf_cache:/cache/huggingface
+    expose:
+      - "8000"
+      - "8001"
+      - "8002"
+    shm_size: "1gb"
+
+volumes:
+  vlm_narration_hf_cache:
