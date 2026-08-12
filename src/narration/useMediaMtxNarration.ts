@@ -129,9 +129,9 @@ export const useMediaMtxNarration = () => {
     setStatus('idle');
   }, [closeWebSocket]);
 
-  const connectNarrationWebSocket = useCallback(() => {
+  const connectNarrationWebSocket = useCallback((streamPath: string) => {
     closeWebSocket();
-    const websocket = new WebSocket(getNarrationWebSocketUrl());
+    const websocket = new WebSocket(getNarrationWebSocketUrl(streamPath));
     websocketRef.current = websocket;
 
     websocket.onmessage = (event) => {
@@ -255,7 +255,7 @@ export const useMediaMtxNarration = () => {
       const resourceLocation = response.headers.get('Location');
       whipResourceUrlRef.current = resourceLocation ? new URL(resourceLocation, whipUrl).toString() : null;
 
-      connectNarrationWebSocket();
+      connectNarrationWebSocket(streamPath);
       setStatus('running');
       return { whipUrl, streamPath };
     } catch (error) {
