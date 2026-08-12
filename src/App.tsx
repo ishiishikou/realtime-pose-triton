@@ -4,10 +4,17 @@ import { MediaMtxVlmNarrationPanel } from './components/MediaMtxVlmNarrationPane
 import { PoseWebRtcPanel } from './components/PoseWebRtcPanel';
 
 type AppMode = 'pose' | 'narration';
+type PerfBootstrapWindow = Window & { __perfResults?: unknown[] };
 
 const getInitialMode = (): AppMode => {
   const requestedMode = new URLSearchParams(window.location.search).get('mode');
-  return requestedMode === 'narration' ? 'narration' : 'pose';
+  if (requestedMode === 'narration') {
+    return 'narration';
+  }
+  if (Array.isArray((window as PerfBootstrapWindow).__perfResults)) {
+    return 'narration';
+  }
+  return 'pose';
 };
 
 const App = () => {
