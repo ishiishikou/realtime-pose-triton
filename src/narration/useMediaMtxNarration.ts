@@ -18,6 +18,15 @@ export type MediaMtxPublisherOptions = {
   password: string;
 };
 
+export type MediaMtxPublisherStartResult = {
+  whipUrl: string;
+  streamPath: string;
+};
+
+type PerfWindow = Window & {
+  __perfPeerConnections?: RTCPeerConnection[];
+};
+
 const buildAuthorizationHeader = (username: string, password: string): string | null => {
   if (!username && !password) {
     return null;
@@ -29,6 +38,20 @@ const normalizeBaseUrl = (baseUrl: string): string => baseUrl.trim().replace(/\/
 const normalizeStreamPath = (streamPath: string): string => streamPath.trim().replace(/^\/+|\/+$/g, '');
 
 const parseNarrationMessage = (raw: string): NarrationWebSocketMessage => JSON.parse(raw) as NarrationWebSocketMessage;
+
+const emitPerformanceResult = (payload: NarrationMessage) => {
+  window.dispatchEvent(new CustomEvent('perf:inference-result', {
+    detail: {
+      frame_id: payload.frameId,
+      server_receive_ts_ms: payload.rtspReceiveTsMs,
+      inference_start_ts_ms: payload.inferenceStartTsMs,
+      inference_end_ts_ms: payload.inferenceEndTsMs,
+      result_send_ts_ms: payload.resultSendTsMs,
+      inference_ms: payload.inferenceMs,
+      narration_text: payload.text,
+    },
+  }));
+};
 
 export const getDefaultMediaMtxBaseUrl = (): string => {
   const configured = import.meta.env.VITE_MEDIAMTX_WEBRTC_BASE_URL?.trim().replace(/\/$/, '');
@@ -117,6 +140,7 @@ export const useMediaMtxNarration = () => {
         if (payload.type === 'narration') {
           setLatestNarration(payload);
           setErrorMessage(null);
+          emitPerformanceResult(payload);
           return;
         }
         if (payload.type === 'narration-error') {
@@ -132,9 +156,9 @@ export const useMediaMtxNarration = () => {
     };
   }, [closeWebSocket]);
 
-  const start = useCallback(async (options: MediaMtxPublisherOptions) => {
+  const start = useCallback(async (options: MediaMtxPublisherOptions): Promise<MediaMtxPublisherStartResult> => {
     if (status !== 'idle' && status !== 'error') {
-      return;
+      throw new Error(`MediaMTX publisher is already active: ${status}`);
     }
 
     setStatus('starting');
@@ -181,6 +205,10 @@ export const useMediaMtxNarration = () => {
       sendStreamRef.current = sendStream;
       const peerConnection = new RTCPeerConnection(getPeerConnectionConfiguration());
       peerConnectionRef.current = peerConnection;
+      const perfWindow = window as PerfWindow;
+      if (Array.isArray(perfWindow.__perfPeerConnections)) {
+        perfWindow.__perfPeerConnections.push(peerConnection);
+      }
 
       peerConnection.onconnectionstatechange = () => {
         if (peerConnection.connectionState === 'connected') {
@@ -229,10 +257,12 @@ export const useMediaMtxNarration = () => {
 
       connectNarrationWebSocket();
       setStatus('running');
+      return { whipUrl, streamPath };
     } catch (error) {
       await stop();
       setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : String(error));
+      throw error;
     }
   }, [connectNarrationWebSocket, status, stop]);
 
