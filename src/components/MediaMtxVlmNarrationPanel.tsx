@@ -7,6 +7,22 @@ import {
   useMediaMtxNarration,
 } from '../narration/useMediaMtxNarration';
 
+type PerfStartOptions = {
+  clientId: string;
+  streamPath: string;
+  scenarioId: string;
+  publishUser?: string;
+  publishPass?: string;
+  webRtcBase?: string;
+};
+
+type PerfWindow = Window & {
+  __PERF_START_PUBLISH?: (options: PerfStartOptions) => Promise<Record<string, unknown>>;
+};
+
+const DEFAULT_PUBLISHER_USER = import.meta.env.VITE_MEDIAMTX_PUBLISHER_USER?.trim() || 'poc-publisher';
+const DEFAULT_PUBLISHER_PASSWORD = import.meta.env.VITE_MEDIAMTX_PUBLISHER_PASSWORD?.trim() || 'poc-publisher-pass';
+
 const formatTimestamp = (timestampMs: number | null | undefined): string => {
   if (timestampMs === null || timestampMs === undefined) {
     return '-';
@@ -18,8 +34,8 @@ export const MediaMtxVlmNarrationPanel = () => {
   const { videoRef, status, latestNarration, errorMessage, start, stop } = useMediaMtxNarration();
   const [mediaMtxBaseUrl, setMediaMtxBaseUrl] = useState(getDefaultMediaMtxBaseUrl);
   const [streamPath, setStreamPath] = useState(getDefaultMediaMtxStreamPath);
-  const [publisherUser, setPublisherUser] = useState('');
-  const [publisherPassword, setPublisherPassword] = useState('');
+  const [publisherUser, setPublisherUser] = useState(DEFAULT_PUBLISHER_USER);
+  const [publisherPassword, setPublisherPassword] = useState(DEFAULT_PUBLISHER_PASSWORD);
   const [runtimeStatus, setRuntimeStatus] = useState<NarrationRuntimeStatus | null>(null);
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
 
@@ -38,6 +54,36 @@ export const MediaMtxVlmNarrationPanel = () => {
     const intervalId = window.setInterval(refresh, 2000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    const perfWindow = window as PerfWindow;
+    perfWindow.__PERF_START_PUBLISH = async (options) => {
+      const nextBaseUrl = options.webRtcBase?.trim() || mediaMtxBaseUrl;
+      const nextUser = options.publishUser ?? publisherUser;
+      const nextPassword = options.publishPass ?? publisherPassword;
+      setMediaMtxBaseUrl(nextBaseUrl);
+      setStreamPath(options.streamPath);
+      setPublisherUser(nextUser);
+      setPublisherPassword(nextPassword);
+
+      const result = await start({
+        baseUrl: nextBaseUrl,
+        streamPath: options.streamPath,
+        username: nextUser,
+        password: nextPassword,
+      });
+
+      return {
+        ...result,
+        clientId: options.clientId,
+        scenarioId: options.scenarioId,
+      };
+    };
+
+    return () => {
+      delete perfWindow.__PERF_START_PUBLISH;
+    };
+  }, [mediaMtxBaseUrl, publisherPassword, publisherUser, start]);
 
   const isRunning = status === 'running' || status === 'starting';
   const sourceLabel = runtimeStatus?.source_connected ? 'connected' : runtimeStatus?.configured ? 'waiting' : 'not configured';
@@ -119,7 +165,7 @@ export const MediaMtxVlmNarrationPanel = () => {
           />
         </label>
         <p className="source-note narration-source-note">
-          backendの <code>NARRATION_RTSP_URL</code> は、このstream pathと同じMediaMTX pathを参照してください。認証情報はブラウザ内だけで使用し、保存しません。
+          backendの <code>NARRATION_RTSP_URL</code> は、このstream pathと同じMediaMTX pathを参照してください。表示中の認証情報はローカルPoC用example値で、ブラウザ内だけで使用し保存しません。
         </p>
       </div>
 
