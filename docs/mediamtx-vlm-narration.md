@@ -17,7 +17,7 @@ Smartphone browser
           │ RTSP
           ▼
   narration backend
-    ├─ RTSP reader
+    ├─ RTSP reader / stream path
     ├─ latest frame only
     └─ every N seconds
           │
@@ -45,13 +45,30 @@ RTSP reader と VLM worker は分離する。
 
 VLM推論時間が更新間隔より長い場合でも、古いフレームの推論待ちが積み上がらないことを優先する。
 
+## 複数stream path
+
+性能測定では `live/perf/.../webrtc-001` のようにクライアントごとにMediaMTX pathが変わるため、RTSP URL全体を固定しない。
+
+backendにはサーバ側でのみ次を設定する。
+
+```text
+NARRATION_RTSP_BASE_URL
+        +
+検証済み stream_path
+        ↓
+実際に購読する RTSP URL
+```
+
+ブラウザから指定できるのは `stream_path` だけで、任意のRTSP URLは指定できない。既定では `live/` 配下だけを許可する。
+
 ## 設定
 
 主な環境変数:
 
 | 変数 | 既定値 | 用途 |
 | --- | --- | --- |
-| `NARRATION_RTSP_URL` | 空 | backendコンテナから到達できるMediaMTX RTSP URL |
+| `NARRATION_RTSP_BASE_URL` | 空 | backendから見たMediaMTX RTSP base URL。認証情報を含む実値はローカル設定のみ |
+| `NARRATION_ALLOWED_PATH_PREFIX` | `live/` | ブラウザから指定可能なstream pathのprefix |
 | `NARRATION_RTSP_TRANSPORT` | `tcp` | RTSP transport |
 | `NARRATION_RTSP_RECONNECT_SECONDS` | `2` | RTSP再接続間隔 |
 | `VLM_TRITON_GRPC_URL` | `vlm-triton:8001` | VLM Triton gRPC endpoint |
@@ -61,9 +78,9 @@ VLM推論時間が更新間隔より長い場合でも、古いフレームの�
 | `VLM_NARRATION_JPEG_QUALITY` | `80` | Tritonへ送るJPEG品質 |
 | `VLM_MAX_NEW_TOKENS` | `24` | VLM生成token上限 |
 | `VITE_MEDIAMTX_WEBRTC_BASE_URL` | 空 | ブラウザから見たMediaMTX HTTPS URL。空なら現在のhostの`:8889`を使用 |
-| `VITE_MEDIAMTX_STREAM_PATH` | `live/iphone-001` | WHIP publish path |
+| `VITE_MEDIAMTX_STREAM_PATH` | `live/iphone-001` | 手動確認時のWHIP publish path |
 
-実RTSP URL、認証情報、実IPアドレスは `.env` / `.env.local` 等のローカル設定へ置き、Gitへ登録しない。
+実RTSP base URL、実認証情報、実IPアドレスは `.env` / `.env.local` 等のローカル設定へ置き、Gitへ登録しない。
 
 ## `mediamtx-playground` と組み合わせるスマートフォン検証
 
@@ -80,7 +97,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass \
 
 PowerShellは停止せず、そのまま起動状態を維持する。
 
-この公開用サンプル構成では次を使用する。
+公開用サンプル構成では次のexample値を使用する。
 
 ```text
 container: mediamtx-smartphone
@@ -98,7 +115,6 @@ RTSP reader password: poc-viewer-pass
 スマートフォンから到達できるPCのLAN IPを指定する。
 
 ```bash
-cd ~/realtime-inference-benchmark/components/realtime-pose-triton
 bash scripts/create-local-https-cert.sh <PC-LAN-IP>
 ```
 
@@ -115,13 +131,14 @@ cp .env.example .env
 `mediamtx-playground` のexample credentialを使う場合のローカル設定例:
 
 ```dotenv
-NARRATION_RTSP_URL=rtsp://poc-viewer:poc-viewer-pass@mediamtx-smartphone:8554/live/iphone-001
+NARRATION_RTSP_BASE_URL=rtsp://poc-viewer:poc-viewer-pass@mediamtx-smartphone:8554
+NARRATION_ALLOWED_PATH_PREFIX=live/
 VITE_MEDIAMTX_STREAM_PATH=live/iphone-001
 VLM_NARRATION_INTERVAL_SECONDS=3
 VLM_MAX_NEW_TOKENS=24
 ```
 
-`NARRATION_RTSP_URL` は `.env` のみに置き、commitしない。
+`NARRATION_RTSP_BASE_URL` は `.env` のみに置き、commitしない。
 
 ### 4. HTTPS UI + backend + VLM Tritonを起動
 
@@ -149,15 +166,21 @@ backendはRTSP接続に失敗しても再接続を続けるため、Compose起�
 
 ### 6. backend状態を確認
 
+status APIはstream pathを明示する。
+
 ```bash
-curl -k https://localhost:5173/api/narration/status | python3 -m json.tool
+curl -kG \
+  --data-urlencode 'stream_path=live/iphone-001' \
+  https://localhost:5173/api/narration/status \
+  | python3 -m json.tool
 ```
 
-MediaMTXにまだpublishしていない場合は、概ね次の状態になる。
+MediaMTXにまだpublishしていない場合は概ね次の状態になる。
 
 ```json
 {
   "configured": true,
+  "stream_path": "live/iphone-001",
   "source_connected": false
 }
 ```
@@ -188,37 +211,81 @@ MediaMTX側のHTTPS証明書もスマートフォンから信頼済みにして�
 1. スマートフォンのカメラを取得
 2. 640x360 / 10fps の送信用映像を作成
 3. MediaMTXの `/<path>/whip` へWebRTC publish
-4. backendが同じpathをRTSP購読
-5. VLMが数秒間隔で最新フレームを説明
-6. WebSocketで説明文をブラウザへ返す
-7. 映像下部の `AI narration` を更新
+4. 同じstream pathを指定してbackend WebSocketへ接続
+5. backendがサーバ側RTSP base URL + stream pathでMediaMTXをRTSP購読
+6. VLMが数秒間隔で最新フレームを説明
+7. WebSocketで説明文をブラウザへ返す
+8. 映像下部の `AI narration` を更新
 
 ### 8. 状態確認
 
 ```bash
-curl -k https://localhost:5173/api/narration/status | python3 -m json.tool
+curl -kG \
+  --data-urlencode 'stream_path=live/iphone-001' \
+  https://localhost:5173/api/narration/status \
+  | python3 -m json.tool
 ```
 
 publish後に確認したい項目:
 
 ```text
-configured            true
-source_connected      true
-latest_frame_id       増加する
-last_inferred_frame_id 更新される
-last_inference_ms     数値になる
-websocket_clients     1以上
+configured             true
+source_connected       true
+stream_path             live/iphone-001
+latest_frame_id        増加する
+last_inferred_frame_id  更新される
+last_inference_ms       数値になる
+websocket_clients       1以上
 ```
 
 ブラウザには `A child is ...` のようなナレーションが表示される。
 
-## 性能測定向けtimestamp
+## 性能測定との接続
 
-WebSocketの `narration` messageには以下を含める。
+`mediamtx-playground/scripts/performance/webrtc-publisher.mjs` のapplication-hook modeに合わせ、VLMナレーション画面は次を公開する。
+
+```text
+window.__PERF_START_PUBLISH(options)
+```
+
+performance runnerが渡す `streamPath` をWHIP publish先とbackendのRTSP購読pathの両方に利用する。これにより、複数クライアントがそれぞれ別pathを使える。
+
+ナレーションをブラウザで受信すると、次のCustomEventを発火する。
+
+```text
+perf:inference-result
+```
+
+イベントdetailには既存runnerが収集できる以下のtimestampを入れる。
+
+```text
+frame_id
+server_receive_ts_ms
+inference_start_ts_ms
+inference_end_ts_ms
+result_send_ts_ms
+inference_ms
+narration_text
+```
+
+runner側はイベント受信時刻と `requestAnimationFrame` 後の時刻を追加できるため、RTSP受信以降は次の区間を取得できる。
+
+```text
+RTSP受信 -> VLM開始
+VLM開始 -> VLM終了
+VLM終了 -> WebSocket送信
+WebSocket送信 -> Browser受信/描画
+RTSP受信 -> Browser描画
+```
+
+ブラウザからMediaMTXへ送信した個別フレームとRTSPでdecodeしたフレームを現時点では同じIDで相関できないため、`source_ts_ms` と MediaMTX受信時刻の厳密な対応付けは後続の `realtime-inference-benchmark` 統合で追加する。
+
+## WebSocket message
 
 ```json
 {
   "type": "narration",
+  "streamPath": "live/iphone-001",
   "frameId": 123,
   "rtspReceiveTsMs": 0,
   "inferenceStartTsMs": 0,
@@ -228,17 +295,6 @@ WebSocketの `narration` messageには以下を含める。
   "text": "A child is holding a toy."
 }
 ```
-
-現段階で取得できる区間:
-
-```text
-RTSP受信 -> VLM開始
-VLM開始 -> VLM終了
-VLM終了 -> WebSocket送信
-RTSP受信 -> WebSocket送信
-```
-
-ブラウザ側の受信・描画時刻と、MediaMTXより前の送信時刻は `realtime-inference-benchmark` 統合時に追加し、WebRTC / RTSPの相対比較に使用する。
 
 ## 停止
 
@@ -254,8 +310,11 @@ COMPOSE_PROJECT_NAME=rtpose-narration \
 
 ## セキュリティ
 
-- `NARRATION_RTSP_URL` はAPIレスポンスへ返さない
-- RTSP URLは環境変数だけで設定し、ブラウザから任意URLを指定できるAPIは提供しない
+- `NARRATION_RTSP_BASE_URL` はAPIレスポンスへ返さない
+- RTSP base URLはサーバ側環境変数だけで設定する
+- ブラウザから任意RTSP URLを指定するAPIは提供しない
+- ブラウザから受け取るstream pathは文字種・path segment・`NARRATION_ALLOWED_PATH_PREFIX`を検証する
 - RTSP readerのエラー文字列にcredentialが含まれる場合はマスクしてWebSocket/statusへ返す
 - publisher credentialはブラウザの入力値としてのみ扱い、localStorage等へ保存しない
+- `poc-*` credentialは既存 `mediamtx-playground` と合わせた公開用ローカルPoC example値であり、本番利用しない
 - 実IP、実ホスト名、実カメラURL、実認証情報、証明書、秘密鍵、ログ、キャプチャはpublic repositoryへcommitしない
