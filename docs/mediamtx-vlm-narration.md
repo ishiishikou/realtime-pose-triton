@@ -166,11 +166,9 @@ COMPOSE_PROJECT_NAME=rtpose-narration \
 ```text
 web
 backend
-triton        # RTMPose
-a vlm-triton  # SmolVLM CPU
+triton      # RTMPose
+vlm-triton  # SmolVLM CPU
 ```
-
-上の `a vlm-triton` は表示上の説明であり、実際のservice名は `vlm-triton`。
 
 初回は Hugging Face から SmolVLM の設定・processor・quantized ONNX artifactを取得するためインターネット接続が必要。取得物はnamed volumeへキャッシュされる。
 
