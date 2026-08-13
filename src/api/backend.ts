@@ -37,6 +37,7 @@ export type NarrationRuntimeStatus = {
   configured: boolean;
   stream_path: string;
   source_connected: boolean;
+  source_retry_count: number;
   rtsp_transport: string;
   interval_seconds: number;
   vlm_model_name: string;
@@ -45,6 +46,8 @@ export type NarrationRuntimeStatus = {
   latest_frame_received_ts_ms: number | null;
   last_inferred_frame_id: number | null;
   last_inference_ms: number | null;
+  inference_in_progress: boolean;
+  inference_started_ts_ms: number | null;
   last_error: string | null;
   websocket_clients: number;
 };
