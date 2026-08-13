@@ -32,7 +32,7 @@ const App = () => {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell app-shell-${mode}`}>
       <nav className="app-mode-switch" aria-label="demo mode">
         <button className={mode === 'pose' ? 'source-mode-button active' : 'source-mode-button'} type="button" onClick={() => selectMode('pose')}>
           RTMPose
