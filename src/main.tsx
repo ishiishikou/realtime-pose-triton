@@ -5,6 +5,7 @@ import App from './App';
 import './styles.css';
 import './narration.css';
 import './mobile-ux.css';
+import './ux-enhancements.css';
 
 const rootElement = document.getElementById('root');
 
