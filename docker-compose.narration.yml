@@ -65,6 +65,16 @@ services:
       - "8000"
       - "8001"
       - "8002"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import os,urllib.request; name=os.environ.get('POSE_MODEL_NAME','rtmpose'); urllib.request.urlopen('http://127.0.0.1:8000/v2/models/'+name+'/ready', timeout=2).read()"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   vlm-triton:
     build:
