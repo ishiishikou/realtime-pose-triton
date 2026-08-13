@@ -147,15 +147,17 @@ export const PoseWebRtcPanel = () => {
     setInputMode(nextMode);
   };
 
+  const toggleChecklist = () => setIsChecklistOpen((nextOpen) => !nextOpen);
+
   return (
-    <section className="pose-card">
+    <section className="pose-card pose-card-pose">
       <div className="pose-header">
         <div>
           <p className="eyebrow">WebRTC + RTMPose + Triton</p>
           <h1>カメラ・動画でポーズ判定</h1>
           <p className="lead">カメラまたは動画ファイルに推論結果と実施状況を重ねて、右手・左手・両手の判定を確認します。</p>
         </div>
-        <div className="button-row compact">
+        <div className="button-row compact pose-session-controls">
           <button className="primary-button" type="button" onClick={handleStart} disabled={isRunning || (inputMode === 'video' && !videoFileUrl)}>開始</button>
           <button className="secondary-button" type="button" onClick={stop} disabled={status === 'idle'}>停止</button>
         </div>
@@ -226,18 +228,26 @@ export const PoseWebRtcPanel = () => {
       <div className="pose-stage">
         <video ref={videoRef} src={inputMode === 'video' ? videoFileUrl ?? undefined : undefined} className="pose-video" playsInline muted autoPlay />
         <canvas ref={canvasRef} className="pose-canvas" />
-        <div className="pose-checklist-overlay">
-          <button
-            className="pose-checklist-summary"
-            type="button"
-            aria-expanded={isChecklistOpen}
-            aria-controls="hand-raise-checklist"
-            onClick={() => setIsChecklistOpen((nextOpen) => !nextOpen)}
-          >
+        <div
+          className="pose-checklist-overlay"
+          role="button"
+          tabIndex={0}
+          aria-expanded={isChecklistOpen}
+          aria-controls="hand-raise-checklist"
+          aria-label={isChecklistOpen ? '実施状況を閉じる' : '実施状況の詳細を開く'}
+          onClick={toggleChecklist}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              toggleChecklist();
+            }
+          }}
+        >
+          <div className="pose-checklist-summary">
             <span className="pose-checklist-kicker">実施状況</span>
             <strong>{completedHandRaiseCount}/{HAND_RAISE_CHECKS.length}</strong>
             <span className="pose-checklist-hint">{isChecklistOpen ? 'タップで閉じる' : 'タップで詳細'}</span>
-          </button>
+          </div>
 
           {isChecklistOpen ? (
             <div id="hand-raise-checklist" className="pose-checklist-detail" role="list" aria-label="hand raise checklist">
