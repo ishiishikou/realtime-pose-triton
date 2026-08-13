@@ -4,7 +4,7 @@
 
 スマートフォンのカメラ映像をブラウザから MediaMTX へ WebRTC / WHIP で publish し、MediaMTX の RTSP 出力を推論バックエンドが購読する。推論バックエンドは最新フレームだけを数秒間隔で SmolVLM / Triton へ渡し、生成された説明文を WebSocket でブラウザへ返して映像上に表示する。
 
-この経路では FastAPI / aiortc は WebRTC の終端に使用しない。WebRTC は MediaMTX が終端し、推論バックエンドは RTSP reader として動作する。既存の `FastAPI / aiortc -> RTMPose -> DataChannel` は別デモとして残す。
+この経路では FastAPI / aiortc は WebRTC の終端に使用しない。WebRTC は MediaMTX が終端し、推論バックエンドは RTSP reader として動作する。既存の `FastAPI / aiortc -> RTMPose -> DataChannel` は別デモとして残し、同じスマートフォンUIから切り替えて確認できる。
 
 ```text
 Smartphone browser
@@ -40,6 +40,19 @@ RTSP reader と VLM worker は分離する。
 - 次回推論では、その時点の最新フレームを使う
 
 VLM推論時間が更新間隔より長い場合でも、古いフレームの推論待ちが積み上がらないことを優先する。
+
+## スマートフォンUI
+
+スマートフォンでは映像を主役にし、操作UIを必要最小限にする。
+
+- 画面上部に `RTMPose / VLMナレーション` の切替を固定表示する
+- VLMナレーションではカメラ映像を縦長 `9:16` で表示する
+- `前面へ / 背面へ` で配信中もカメラを切り替えられる
+- `全画面` で映像中心の集中表示へ切り替え、`戻る` で通常表示へ戻る
+- 集中表示中もカメラ切替、開始/停止、配信/RTSP状態、ナレーションは操作・確認できる
+- 配信設定と詳細メトリクスは折りたたみ式にし、スマートフォンでは初期状態で閉じる
+
+カメラ切替ではブラウザのカメラ入力だけを再取得する。MediaMTXへ送るトラックはCanvas由来のため、WebRTC/WHIPセッションを張り直さずに前面/背面を切り替える。
 
 ## 複数stream path
 
@@ -100,7 +113,9 @@ RTSP reader password: poc-viewer-pass
 
 これらはローカルPoC用example credentialであり、本番認証情報として使用しない。
 
-### 2. このリポジトリでHTTPS証明書を作る
+### 2. このリポジトリでHTTPS証明書を用意する
+
+既に `mediamtx-playground` で同じPC-LAN-IP向け証明書を作成済みなら、その証明書をローカルだけで再利用してよい。新規作成する場合は次を使う。
 
 ```bash
 bash scripts/create-local-https-cert.sh <PC-LAN-IP>
@@ -117,6 +132,7 @@ cp .env.example .env
 `mediamtx-playground` のexample credentialを使うローカル設定例:
 
 ```dotenv
+VITE_API_BASE_URL=/api
 NARRATION_RTSP_BASE_URL=rtsp://poc-viewer:poc-viewer-pass@mediamtx-smartphone:8554
 NARRATION_ALLOWED_PATH_PREFIX=live/
 VITE_MEDIAMTX_STREAM_PATH=live/iphone-001
@@ -124,20 +140,41 @@ VLM_NARRATION_INTERVAL_SECONDS=3
 VLM_MAX_NEW_TOKENS=24
 ```
 
+`docker-compose.narration.yml` のfrontend buildはAPI baseを同一origin `/api` に固定するため、古い `.env` に `http://localhost:8080` が残っていてもスマートフォンbuildへ混入しない。
+
 `NARRATION_RTSP_BASE_URL` は `.env` のみに置き、commitしない。
 
-### 4. HTTPS UI + backend + VLM Tritonを起動
+### 4. RTMPoseモデルを確認する
 
-ナレーション用ComposeはRTMPose用Tritonを起動しない。
+同じUIからRTMPoseへ切り替えるため、ナレーション用ComposeでもRTMPose Tritonを起動する。次のどちらかを準備する。
+
+```text
+models/rtmpose/1/model.onnx
+```
+
+または `.env` で `RTMPOSE_ONNX_URL` を設定する。モデルartifact自体はGitへcommitしない。
+
+### 5. HTTPS UI + backend + 2種類のTritonを起動
 
 ```bash
 COMPOSE_PROJECT_NAME=rtpose-narration \
   docker compose -f docker-compose.narration.yml up -d --build
 ```
 
+起動する主なservice:
+
+```text
+web
+backend
+triton        # RTMPose
+a vlm-triton  # SmolVLM CPU
+```
+
+上の `a vlm-triton` は表示上の説明であり、実際のservice名は `vlm-triton`。
+
 初回は Hugging Face から SmolVLM の設定・processor・quantized ONNX artifactを取得するためインターネット接続が必要。取得物はnamed volumeへキャッシュされる。
 
-### 5. MediaMTXを同じDockerネットワークへ追加
+### 6. MediaMTXを同じDockerネットワークへ追加
 
 `mediamtx-playground` はRTSPをWindows/LANへ広く公開せず `127.0.0.1` bindにしているため、コンテナ間通信だけを追加する。
 
@@ -147,7 +184,9 @@ docker network connect rtpose-narration_default mediamtx-smartphone
 
 すでに接続済みならそのまま次へ進む。backendはRTSP接続失敗時に再接続するため、Compose起動後にnetwork connectしてよい。
 
-### 6. backend状態を確認
+MediaMTXコンテナを再作成した場合はnetwork接続をやり直す。
+
+### 7. backend状態を確認
 
 ```bash
 curl -kG \
@@ -168,9 +207,9 @@ publish前は概ね次の状態になる。
 
 実RTSP URLやcredentialはstatusレスポンスに含めない。
 
-### 7. スマートフォンから開く
+### 8. スマートフォンから開く
 
-このリポジトリの `certs/server.crt` とMediaMTX側のHTTPS証明書をスマートフォンで信頼したうえで開く。
+このリポジトリのHTTPS証明書とMediaMTX側のHTTPS証明書をスマートフォンで信頼したうえで開く。
 
 ```text
 https://<PC-LAN-IP>:5173/?mode=narration
@@ -196,7 +235,9 @@ publisher password: poc-publisher-pass
 7. WebSocketで説明文を返す
 8. 映像下部の `AI narration` を更新
 
-### 8. publish後の状態確認
+配信中に `前面へ / 背面へ` を押すとカメラ入力だけを切り替える。`全画面` はブラウザのFullscreen APIではなく、Webアプリ内で映像をviewport全体へ広げる集中表示で、iPhone Safariでも同じ操作系を維持する。
+
+### 9. publish後の状態確認
 
 ```bash
 curl -kG \
@@ -216,6 +257,8 @@ last_inferred_frame_id  更新される
 last_inference_ms       数値になる
 websocket_clients       1以上
 ```
+
+RTSP sessionはMediaMTXから `timeout=55` が通知され、PyAV/libavformatから `GET_PARAMETER` keepaliveが送信されることを実機debugログで確認済み。
 
 ## 性能測定との接続
 
