@@ -5,7 +5,9 @@ services:
     build:
       context: .
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        # Narration UI is always served through the HTTPS Nginx /api proxy.
+        # Do not inherit legacy VITE_API_BASE_URL values such as http://localhost:8080 from .env.
+        VITE_API_BASE_URL: /api
         VITE_WEBRTC_CONFIG: ${VITE_WEBRTC_CONFIG:-}
         VITE_MEDIAMTX_WEBRTC_BASE_URL: ${VITE_MEDIAMTX_WEBRTC_BASE_URL:-}
         VITE_MEDIAMTX_STREAM_PATH: ${VITE_MEDIAMTX_STREAM_PATH:-live/iphone-001}
