@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { fetchNarrationStatus, type NarrationRuntimeStatus } from '../api/backend';
 import {
@@ -20,9 +20,13 @@ type PerfWindow = Window & {
   __PERF_START_PUBLISH?: (options: PerfStartOptions) => Promise<Record<string, unknown>>;
 };
 
+type NarrationInputMode = 'camera' | 'video';
+
 const DEFAULT_PUBLISHER_USER = import.meta.env.VITE_MEDIAMTX_PUBLISHER_USER?.trim() || 'poc-publisher';
 const DEFAULT_PUBLISHER_PASSWORD = import.meta.env.VITE_MEDIAMTX_PUBLISHER_PASSWORD?.trim() || 'poc-publisher-pass';
 const SOURCE_ERROR_THRESHOLD = 3;
+const PROGRESS_RADIUS = 18;
+const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
 
 const formatTimestamp = (timestampMs: number | null | undefined): string => {
   if (timestampMs === null || timestampMs === undefined) {
@@ -67,7 +71,12 @@ export const MediaMtxVlmNarrationPanel = () => {
   const [settingsOpen, setSettingsOpen] = useState(() => window.matchMedia('(min-width: 821px)').matches);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [inputMode, setInputMode] = useState<NarrationInputMode>('camera');
+  const [videoFileUrl, setVideoFileUrl] = useState<string | null>(null);
+  const [videoFileName, setVideoFileName] = useState<string | null>(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
+  const [completedFrameId, setCompletedFrameId] = useState<number | null>(null);
+  const previousNarrationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     const refresh = async () => {
@@ -92,9 +101,29 @@ export const MediaMtxVlmNarrationPanel = () => {
     }
 
     setClockMs(Date.now());
-    const intervalId = window.setInterval(() => setClockMs(Date.now()), 250);
+    const intervalId = window.setInterval(() => setClockMs(Date.now()), 200);
     return () => window.clearInterval(intervalId);
   }, [runtimeStatus?.inference_in_progress, runtimeStatus?.inference_started_ts_ms]);
+
+  useEffect(() => {
+    const nextFrameId = latestNarration?.frameId ?? null;
+    if (nextFrameId === null || previousNarrationFrameRef.current === nextFrameId) {
+      return undefined;
+    }
+
+    previousNarrationFrameRef.current = nextFrameId;
+    setCompletedFrameId(nextFrameId);
+    const timeoutId = window.setTimeout(() => setCompletedFrameId(null), 900);
+    return () => window.clearTimeout(timeoutId);
+  }, [latestNarration?.frameId]);
+
+  useEffect(() => {
+    return () => {
+      if (videoFileUrl) {
+        URL.revokeObjectURL(videoFileUrl);
+      }
+    };
+  }, [videoFileUrl]);
 
   useEffect(() => {
     const perfWindow = window as PerfWindow;
@@ -112,6 +141,7 @@ export const MediaMtxVlmNarrationPanel = () => {
         streamPath: options.streamPath,
         username: nextUser,
         password: nextPassword,
+        source: { type: 'camera' },
       });
 
       return {
@@ -158,18 +188,30 @@ export const MediaMtxVlmNarrationPanel = () => {
     ? Math.max(0, clockMs - runtimeStatus.inference_started_ts_ms)
     : null;
   const previousInferenceMs = runtimeStatus?.last_inference_ms ?? latestNarration?.inferenceMs ?? null;
+  const estimatedProgress = inferenceElapsedMs !== null && previousInferenceMs !== null && previousInferenceMs > 0
+    ? Math.min(0.94, inferenceElapsedMs / previousInferenceMs)
+    : null;
   const estimatedRemainingSeconds = inferenceElapsedMs !== null && previousInferenceMs !== null
     ? Math.max(0, Math.ceil((previousInferenceMs - inferenceElapsedMs) / 1000))
     : null;
-  const inferenceProgressLabel = runtimeStatus?.inference_in_progress && inferenceElapsedMs !== null
-    ? estimatedRemainingSeconds !== null && estimatedRemainingSeconds > 0
+  const inferenceComplete = completedFrameId !== null && completedFrameId === latestNarration?.frameId;
+  const inferenceDialogVisible = Boolean(inferenceComplete || runtimeStatus?.inference_in_progress);
+  const inferenceDialogProgress = inferenceComplete ? 1 : estimatedProgress;
+  const inferenceDialogTitle = inferenceComplete ? 'ナレーション更新' : 'AI推論中';
+  const inferenceDialogDetail = inferenceComplete
+    ? '推論結果を更新しました'
+    : estimatedRemainingSeconds !== null && estimatedRemainingSeconds > 0
       ? `目安あと ${estimatedRemainingSeconds}秒`
-      : `推論中 ${(inferenceElapsedMs / 1000).toFixed(0)}秒`
-    : null;
+      : inferenceElapsedMs !== null && previousInferenceMs !== null
+        ? '結果を待っています'
+        : inferenceElapsedMs !== null
+          ? `経過 ${(inferenceElapsedMs / 1000).toFixed(0)}秒`
+          : '';
   const progressLabel = sourceConnecting
     ? '映像接続中…'
-    : inferenceProgressLabel
-      ?? (runtimeStatus?.source_connected && !latestNarration ? '推論準備中…' : null);
+    : runtimeStatus?.source_connected && !latestNarration && !runtimeStatus.inference_in_progress
+      ? '推論準備中…'
+      : null;
   const shouldShowBackendError = Boolean(
     runtimeStatus?.last_error
       && (runtimeStatus.source_connected || sourceFailed),
@@ -181,12 +223,28 @@ export const MediaMtxVlmNarrationPanel = () => {
     return latestNarration.resultSendTsMs - latestNarration.rtspReceiveTsMs;
   }, [latestNarration]);
 
+  const handleVideoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setVideoFileUrl(file ? URL.createObjectURL(file) : null);
+    setVideoFileName(file?.name ?? null);
+  };
+
+  const handleInputModeChange = (nextMode: NarrationInputMode) => {
+    if (isConfigLocked) {
+      return;
+    }
+    setInputMode(nextMode);
+  };
+
   const handleStart = () => {
     void start({
       baseUrl: mediaMtxBaseUrl,
       streamPath,
       username: publisherUser,
       password: publisherPassword,
+      source: inputMode === 'video'
+        ? { type: 'video', url: videoFileUrl ?? '' }
+        : { type: 'camera' },
     }).catch(() => undefined);
   };
 
@@ -214,6 +272,11 @@ export const MediaMtxVlmNarrationPanel = () => {
       ? '前面へ'
       : '背面へ';
 
+  const actionDisabled = isBusy || (!isRunning && inputMode === 'video' && !videoFileUrl);
+  const ringDashOffset = inferenceDialogProgress === null
+    ? undefined
+    : PROGRESS_CIRCUMFERENCE * (1 - inferenceDialogProgress);
+
   return (
     <section className={`pose-card narration-card${focusMode ? ' narration-focus-mode' : ''}`}>
       <div className="pose-header narration-header">
@@ -221,14 +284,14 @@ export const MediaMtxVlmNarrationPanel = () => {
           <p className="eyebrow">MediaMTX + RTSP + SmolVLM + Triton</p>
           <h1>リアルタイム映像ナレーション</h1>
           <p className="lead">
-            スマートフォンの映像をMediaMTXへWebRTC publishし、RTSPで取得した最新フレームを数秒間隔でVLMへ渡します。
+            スマートフォンのカメラまたは動画をMediaMTXへWebRTC publishし、RTSPで取得した最新フレームをVLMへ渡します。
           </p>
         </div>
         <button
           className={`${isRunning ? 'secondary-button' : 'primary-button'} narration-action-button`}
           type="button"
           onClick={handleSessionAction}
-          disabled={isBusy}
+          disabled={actionDisabled}
         >
           {actionLabel}
         </button>
@@ -245,21 +308,52 @@ export const MediaMtxVlmNarrationPanel = () => {
         </div>
       </div>
 
+      <div className="narration-input-bar" aria-label="VLM入力">
+        <div className="source-mode-row" role="group" aria-label="入力モード">
+          <button
+            className={inputMode === 'camera' ? 'source-mode-button active' : 'source-mode-button'}
+            type="button"
+            onClick={() => handleInputModeChange('camera')}
+            disabled={isConfigLocked}
+          >
+            カメラ
+          </button>
+          <button
+            className={inputMode === 'video' ? 'source-mode-button active' : 'source-mode-button'}
+            type="button"
+            onClick={() => handleInputModeChange('video')}
+            disabled={isConfigLocked}
+          >
+            動画
+          </button>
+        </div>
+        {inputMode === 'video' ? (
+          <label className="video-file-picker narration-video-picker">
+            <span>{videoFileName ?? '動画ファイルを選択'}</span>
+            <input type="file" accept="video/*" onChange={handleVideoFileChange} disabled={isConfigLocked} />
+          </label>
+        ) : (
+          <span className="narration-input-note">{cameraFacingMode === 'environment' ? '背面カメラ' : '前面カメラ'}</span>
+        )}
+      </div>
+
       {runtimeStatusError ? <p className="error-text">status: {runtimeStatusError}</p> : null}
       {shouldShowBackendError ? <p className="error-text">backend: {runtimeStatus?.last_error}</p> : null}
       {errorMessage ? <p className="error-text">session: {errorMessage}</p> : null}
 
       <div className="pose-stage narration-stage">
         <video ref={videoRef} className="pose-video" playsInline muted autoPlay />
-        <div className="narration-stage-controls" aria-label="カメラ操作">
-          <button
-            className="narration-stage-button"
-            type="button"
-            onClick={() => void switchCamera()}
-            disabled={isSwitchingCamera || isBusy}
-          >
-            {cameraSwitchLabel}
-          </button>
+        <div className="narration-stage-controls" aria-label="映像操作">
+          {inputMode === 'camera' ? (
+            <button
+              className="narration-stage-button"
+              type="button"
+              onClick={() => void switchCamera()}
+              disabled={isSwitchingCamera || isBusy}
+            >
+              {cameraSwitchLabel}
+            </button>
+          ) : null}
           <button
             className="narration-stage-button"
             type="button"
@@ -272,21 +366,39 @@ export const MediaMtxVlmNarrationPanel = () => {
               className="narration-stage-button narration-stage-stop"
               type="button"
               onClick={handleSessionAction}
-              disabled={isBusy}
+              disabled={actionDisabled}
             >
               {actionLabel}
             </button>
           ) : null}
         </div>
+
+        {inferenceDialogVisible ? (
+          <div className={`narration-inference-dialog${inferenceComplete ? ' complete' : ''}`} role="status" aria-live="polite">
+            <svg className={`narration-inference-ring${inferenceDialogProgress === null ? ' indeterminate' : ''}`} viewBox="0 0 44 44" aria-hidden="true">
+              <circle className="narration-inference-ring-track" cx="22" cy="22" r={PROGRESS_RADIUS} />
+              <circle
+                className="narration-inference-ring-value"
+                cx="22"
+                cy="22"
+                r={PROGRESS_RADIUS}
+                style={inferenceDialogProgress === null ? undefined : {
+                  strokeDasharray: PROGRESS_CIRCUMFERENCE,
+                  strokeDashoffset: ringDashOffset,
+                }}
+              />
+            </svg>
+            <div>
+              <strong>{inferenceDialogTitle}</strong>
+              <span>{inferenceDialogDetail}</span>
+            </div>
+          </div>
+        ) : null}
+
         <div className="narration-overlay" aria-live="polite">
           <div className="narration-overlay-meta">
             <span className="narration-kicker">AI narration</span>
-            {progressLabel ? (
-              <span className="narration-progress" aria-label={progressLabel}>
-                <span className="narration-progress-ring" aria-hidden="true" />
-                {progressLabel}
-              </span>
-            ) : null}
+            {progressLabel ? <span className="narration-progress-text">{progressLabel}</span> : null}
           </div>
           <strong>{narrationText}</strong>
         </div>
@@ -357,7 +469,7 @@ export const MediaMtxVlmNarrationPanel = () => {
       >
         <summary>
           <span>詳細情報</span>
-          <small>{progressLabel ?? (latestNarration ? `VLM ${inferenceLabel}` : '推論待機中')}</small>
+          <small>{inferenceComplete ? 'ナレーション更新' : runtimeStatus?.inference_in_progress ? inferenceDialogDetail : latestNarration ? `VLM ${inferenceLabel}` : '推論待機中'}</small>
         </summary>
         <div className="narration-detail-body">
           <div className="status-grid" aria-label="narration runtime status">
@@ -388,6 +500,7 @@ export const MediaMtxVlmNarrationPanel = () => {
           </div>
 
           <div className="metrics-grid">
+            <p className="note">input: {inputMode === 'video' ? videoFileName ?? 'video' : cameraFacingMode === 'environment' ? 'camera rear' : 'camera front'}</p>
             <p className="note">stream: {runtimeStatus?.stream_path ?? streamPath}</p>
             <p className="note">frame: {latestNarration?.frameId ?? runtimeStatus?.latest_frame_id ?? '-'}</p>
             <p className="note">RTSP received: {formatTimestamp(latestNarration?.rtspReceiveTsMs)}</p>
