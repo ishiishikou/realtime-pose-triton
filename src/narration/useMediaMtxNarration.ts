@@ -5,7 +5,13 @@ import {
   type NarrationMessage,
   type NarrationWebSocketMessage,
 } from '../api/backend';
-import { getCameraStream, SEND_FPS, SEND_HEIGHT, SEND_WIDTH } from '../pose/camera';
+import {
+  getCameraStream,
+  SEND_FPS,
+  SEND_HEIGHT,
+  SEND_WIDTH,
+  type CameraFacingMode,
+} from '../pose/camera';
 import { getPeerConnectionConfiguration } from '../pose/connectionConfig';
 import { waitForIceGatheringComplete } from '../pose/ice';
 
@@ -74,10 +80,13 @@ export const useMediaMtxNarration = () => {
   const websocketRef = useRef<WebSocket | null>(null);
   const whipResourceUrlRef = useRef<string | null>(null);
   const authorizationHeaderRef = useRef<string | null>(null);
+  const cameraFacingModeRef = useRef<CameraFacingMode>('environment');
 
   const [status, setStatus] = useState<MediaMtxNarrationStatus>('idle');
   const [latestNarration, setLatestNarration] = useState<NarrationMessage | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('environment');
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   const closeWebSocket = useCallback(() => {
     const websocket = websocketRef.current;
@@ -124,6 +133,7 @@ export const useMediaMtxNarration = () => {
       videoRef.current.srcObject = null;
     }
 
+    setIsSwitchingCamera(false);
     setLatestNarration(null);
     setErrorMessage(null);
     setStatus('idle');
@@ -156,6 +166,46 @@ export const useMediaMtxNarration = () => {
     };
   }, [closeWebSocket]);
 
+  const switchCamera = useCallback(async () => {
+    const previousFacingMode = cameraFacingModeRef.current;
+    const nextFacingMode: CameraFacingMode = previousFacingMode === 'environment' ? 'user' : 'environment';
+    const video = videoRef.current;
+    const previousStream = cameraStreamRef.current;
+
+    if (!video || !previousStream) {
+      cameraFacingModeRef.current = nextFacingMode;
+      setCameraFacingMode(nextFacingMode);
+      return;
+    }
+
+    setIsSwitchingCamera(true);
+    setErrorMessage(null);
+
+    previousStream.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+
+    try {
+      const nextStream = await getCameraStream(nextFacingMode);
+      cameraStreamRef.current = nextStream;
+      video.srcObject = nextStream;
+      await video.play();
+      cameraFacingModeRef.current = nextFacingMode;
+      setCameraFacingMode(nextFacingMode);
+    } catch (error) {
+      try {
+        const fallbackStream = await getCameraStream(previousFacingMode);
+        cameraStreamRef.current = fallbackStream;
+        video.srcObject = fallbackStream;
+        await video.play();
+      } catch {
+        // Preserve the original switching error; the user can stop and restart the session.
+      }
+      setErrorMessage(error instanceof Error ? `カメラ切替に失敗しました: ${error.message}` : 'カメラ切替に失敗しました');
+    } finally {
+      setIsSwitchingCamera(false);
+    }
+  }, []);
+
   const start = useCallback(async (options: MediaMtxPublisherOptions): Promise<MediaMtxPublisherStartResult> => {
     if (status !== 'idle' && status !== 'error') {
       throw new Error(`MediaMTX publisher is already active: ${status}`);
@@ -180,7 +230,7 @@ export const useMediaMtxNarration = () => {
         throw new Error('video element is not ready');
       }
 
-      const cameraStream = await getCameraStream();
+      const cameraStream = await getCameraStream(cameraFacingModeRef.current);
       cameraStreamRef.current = cameraStream;
       video.srcObject = cameraStream;
       await video.play();
@@ -277,6 +327,9 @@ export const useMediaMtxNarration = () => {
     status,
     latestNarration,
     errorMessage,
+    cameraFacingMode,
+    isSwitchingCamera,
+    switchCamera,
     start,
     stop,
   };
