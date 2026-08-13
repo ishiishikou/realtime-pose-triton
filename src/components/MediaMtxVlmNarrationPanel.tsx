@@ -22,6 +22,7 @@ type PerfWindow = Window & {
 
 const DEFAULT_PUBLISHER_USER = import.meta.env.VITE_MEDIAMTX_PUBLISHER_USER?.trim() || 'poc-publisher';
 const DEFAULT_PUBLISHER_PASSWORD = import.meta.env.VITE_MEDIAMTX_PUBLISHER_PASSWORD?.trim() || 'poc-publisher-pass';
+const SOURCE_ERROR_THRESHOLD = 3;
 
 const formatTimestamp = (timestampMs: number | null | undefined): string => {
   if (timestampMs === null || timestampMs === undefined) {
@@ -66,6 +67,7 @@ export const MediaMtxVlmNarrationPanel = () => {
   const [settingsOpen, setSettingsOpen] = useState(() => window.matchMedia('(min-width: 821px)').matches);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [clockMs, setClockMs] = useState(() => Date.now());
 
   useEffect(() => {
     const refresh = async () => {
@@ -79,9 +81,20 @@ export const MediaMtxVlmNarrationPanel = () => {
     };
 
     void refresh();
-    const intervalId = window.setInterval(refresh, 2000);
+    const intervalId = window.setInterval(refresh, 1000);
     return () => window.clearInterval(intervalId);
   }, [streamPath]);
+
+  useEffect(() => {
+    if (!runtimeStatus?.inference_in_progress || runtimeStatus.inference_started_ts_ms === null) {
+      setClockMs(Date.now());
+      return undefined;
+    }
+
+    setClockMs(Date.now());
+    const intervalId = window.setInterval(() => setClockMs(Date.now()), 250);
+    return () => window.clearInterval(intervalId);
+  }, [runtimeStatus?.inference_in_progress, runtimeStatus?.inference_started_ts_ms]);
 
   useEffect(() => {
     const perfWindow = window as PerfWindow;
@@ -116,10 +129,51 @@ export const MediaMtxVlmNarrationPanel = () => {
   const isRunning = status === 'running';
   const isBusy = status === 'starting' || status === 'stopping';
   const isConfigLocked = isRunning || isBusy;
-  const sourceLabel = runtimeStatus?.source_connected ? '接続中' : runtimeStatus?.configured ? '待機中' : '未設定';
+  const sourceRetryCount = runtimeStatus?.source_retry_count ?? 0;
+  const sourceFailed = Boolean(
+    isRunning
+      && runtimeStatus?.configured
+      && !runtimeStatus.source_connected
+      && sourceRetryCount >= SOURCE_ERROR_THRESHOLD,
+  );
+  const sourceConnecting = Boolean(
+    isRunning
+      && runtimeStatus?.configured
+      && !runtimeStatus.source_connected
+      && !sourceFailed,
+  );
+  const sourceLabel = runtimeStatus?.source_connected
+    ? '接続中'
+    : !runtimeStatus?.configured
+      ? '未設定'
+      : sourceConnecting
+        ? '接続中'
+        : sourceFailed
+          ? '接続失敗'
+          : '待機中';
   const publisherLabel = getPublisherLabel(status);
   const narrationText = latestNarration?.text || 'ナレーション待機中';
   const inferenceLabel = latestNarration ? `${latestNarration.inferenceMs.toFixed(0)} ms` : '-';
+  const inferenceElapsedMs = runtimeStatus?.inference_in_progress && runtimeStatus.inference_started_ts_ms !== null
+    ? Math.max(0, clockMs - runtimeStatus.inference_started_ts_ms)
+    : null;
+  const previousInferenceMs = runtimeStatus?.last_inference_ms ?? latestNarration?.inferenceMs ?? null;
+  const estimatedRemainingSeconds = inferenceElapsedMs !== null && previousInferenceMs !== null
+    ? Math.max(0, Math.ceil((previousInferenceMs - inferenceElapsedMs) / 1000))
+    : null;
+  const inferenceProgressLabel = runtimeStatus?.inference_in_progress && inferenceElapsedMs !== null
+    ? estimatedRemainingSeconds !== null && estimatedRemainingSeconds > 0
+      ? `目安あと ${estimatedRemainingSeconds}秒`
+      : `推論中 ${(inferenceElapsedMs / 1000).toFixed(0)}秒`
+    : null;
+  const progressLabel = sourceConnecting
+    ? '映像接続中…'
+    : inferenceProgressLabel
+      ?? (runtimeStatus?.source_connected && !latestNarration ? '推論準備中…' : null);
+  const shouldShowBackendError = Boolean(
+    runtimeStatus?.last_error
+      && (runtimeStatus.source_connected || sourceFailed),
+  );
   const receiveToSendMs = useMemo(() => {
     if (!latestNarration) {
       return null;
@@ -185,14 +239,14 @@ export const MediaMtxVlmNarrationPanel = () => {
           <span>配信</span>
           <strong>{publisherLabel}</strong>
         </div>
-        <div className={`narration-status-pill ${runtimeStatus?.source_connected ? 'ok' : runtimeStatus?.configured ? 'idle' : 'error'}`}>
+        <div className={`narration-status-pill ${runtimeStatus?.source_connected ? 'ok' : sourceFailed ? 'error' : sourceConnecting ? 'working' : runtimeStatus?.configured ? 'idle' : 'error'}`}>
           <span>RTSP</span>
           <strong>{sourceLabel}</strong>
         </div>
       </div>
 
       {runtimeStatusError ? <p className="error-text">status: {runtimeStatusError}</p> : null}
-      {runtimeStatus?.last_error ? <p className="error-text">backend: {runtimeStatus.last_error}</p> : null}
+      {shouldShowBackendError ? <p className="error-text">backend: {runtimeStatus?.last_error}</p> : null}
       {errorMessage ? <p className="error-text">session: {errorMessage}</p> : null}
 
       <div className="pose-stage narration-stage">
@@ -225,7 +279,15 @@ export const MediaMtxVlmNarrationPanel = () => {
           ) : null}
         </div>
         <div className="narration-overlay" aria-live="polite">
-          <span className="narration-kicker">AI narration</span>
+          <div className="narration-overlay-meta">
+            <span className="narration-kicker">AI narration</span>
+            {progressLabel ? (
+              <span className="narration-progress" aria-label={progressLabel}>
+                <span className="narration-progress-ring" aria-hidden="true" />
+                {progressLabel}
+              </span>
+            ) : null}
+          </div>
           <strong>{narrationText}</strong>
         </div>
       </div>
@@ -295,7 +357,7 @@ export const MediaMtxVlmNarrationPanel = () => {
       >
         <summary>
           <span>詳細情報</span>
-          <small>{latestNarration ? `VLM ${inferenceLabel}` : '推論待機中'}</small>
+          <small>{progressLabel ?? (latestNarration ? `VLM ${inferenceLabel}` : '推論待機中')}</small>
         </summary>
         <div className="narration-detail-body">
           <div className="status-grid" aria-label="narration runtime status">
@@ -306,6 +368,10 @@ export const MediaMtxVlmNarrationPanel = () => {
             <div className="status-tile">
               <span className="status-label">RTSP source</span>
               <strong>{sourceLabel}</strong>
+            </div>
+            <div className="status-tile">
+              <span className="status-label">RTSP retries</span>
+              <strong>{sourceRetryCount}</strong>
             </div>
             <div className="status-tile">
               <span className="status-label">VLM</span>
