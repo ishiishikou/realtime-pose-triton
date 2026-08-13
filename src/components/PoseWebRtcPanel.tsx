@@ -249,7 +249,7 @@ export const PoseWebRtcPanel = () => {
         <canvas ref={canvasRef} className="pose-canvas" />
 
         <div className="pose-stage-controls" aria-label="ポーズ画面操作">
-          {inputMode === 'camera' ? (
+          {focusMode && inputMode === 'camera' ? (
             <button
               className="pose-stage-button"
               type="button"
