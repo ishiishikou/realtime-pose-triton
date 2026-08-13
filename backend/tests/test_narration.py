@@ -18,6 +18,9 @@ def test_narration_status_does_not_expose_rtsp_base_or_credentials(monkeypatch):
     assert status['configured'] is True
     assert status['stream_path'] == 'live/camera-001'
     assert status['source_connected'] is False
+    assert status['source_retry_count'] == 0
+    assert status['inference_in_progress'] is False
+    assert status['inference_started_ts_ms'] is None
     assert 'rtsp_url' not in status
     assert 'rtsp_base_url' not in status
     assert 'example-user' not in str(status)
@@ -33,7 +36,9 @@ def test_narration_is_disabled_when_rtsp_base_is_empty(monkeypatch):
 
     assert status['configured'] is False
     assert status['source_connected'] is False
+    assert status['source_retry_count'] == 0
     assert status['latest_frame_id'] is None
+    assert status['inference_in_progress'] is False
 
 
 def test_narration_accepts_dynamic_paths_under_allowed_prefix(monkeypatch):
