@@ -27,7 +27,18 @@ const createEmptyHandRaiseStatus = (): HandRaiseCheckStatus => ({
 });
 
 export const PoseWebRtcPanel = () => {
-  const { videoRef, canvasRef, latestPose, status, errorMessage, start, stop } = usePoseWebRtc();
+  const {
+    videoRef,
+    canvasRef,
+    latestPose,
+    status,
+    errorMessage,
+    cameraFacingMode,
+    isSwitchingCamera,
+    switchCamera,
+    start,
+    stop,
+  } = usePoseWebRtc();
   const [runtimeStatus, setRuntimeStatus] = useState<PoseRuntimeStatus | null>(null);
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
@@ -109,6 +120,11 @@ export const PoseWebRtcPanel = () => {
   const completedHandRaiseCount = HAND_RAISE_CHECKS.filter((check) => completedHandRaiseChecks[check.id]).length;
   const inferenceLabel = latestPose?.inferenceMs !== undefined && latestPose.inferenceMs !== null ? `${latestPose.inferenceMs} ms` : '-';
   const selectedSourceLabel = inputMode === 'camera' ? 'camera' : videoFileName ?? 'video not selected';
+  const cameraSwitchLabel = isSwitchingCamera
+    ? '切替中…'
+    : cameraFacingMode === 'environment'
+      ? '前面へ'
+      : '背面へ';
 
   const handleVideoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -170,7 +186,17 @@ export const PoseWebRtcPanel = () => {
             <input type="file" accept="video/*" onChange={handleVideoFileChange} disabled={status !== 'idle'} />
           </label>
         ) : (
-          <p className="source-note">端末のカメラ映像を入力にします。</p>
+          <>
+            <p className="source-note">端末のカメラ映像を入力にします。</p>
+            <button
+              className="secondary-button pose-camera-switch-button"
+              type="button"
+              onClick={() => void switchCamera()}
+              disabled={isSwitchingCamera || status === 'starting' || status === 'stopping'}
+            >
+              {cameraSwitchLabel}
+            </button>
+          </>
         )}
       </div>
 
