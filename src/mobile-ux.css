@@ -1,0 +1,102 @@
+.narration-overlay-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.narration-progress {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.narration-progress-ring {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(125, 211, 252, 0.24);
+  border-top-color: #7dd3fc;
+  border-radius: 999px;
+  animation: narration-progress-spin 0.9s linear infinite;
+}
+
+.narration-status-pill.working::before {
+  background: #7dd3fc;
+  animation: narration-status-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes narration-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes narration-status-pulse {
+  0%, 100% {
+    opacity: 0.48;
+    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.1);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 5px rgba(125, 211, 252, 0.12);
+  }
+}
+
+.pose-checklist-overlay[role="button"] {
+  cursor: pointer;
+}
+
+.pose-checklist-overlay[role="button"]:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.9);
+  outline-offset: 4px;
+  border-radius: 22px;
+}
+
+.pose-checklist-overlay[role="button"] .pose-checklist-summary,
+.pose-checklist-overlay[role="button"] .pose-checklist-detail {
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .narration-overlay-meta {
+    gap: 6px;
+  }
+
+  .narration-progress {
+    gap: 5px;
+    font-size: 0.66rem;
+  }
+
+  .narration-progress-ring {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Safariの下部ツールバーに開始/停止が隠れない位置まで持ち上げる。 */
+  .app-shell-pose .pose-header {
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    z-index: 12;
+  }
+
+  .app-shell-pose .pose-session-controls {
+    padding: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 18px;
+    background: rgba(2, 6, 23, 0.78);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.36);
+    backdrop-filter: blur(18px);
+  }
+
+  .app-shell-pose .pose-session-controls .primary-button,
+  .app-shell-pose .pose-session-controls .secondary-button {
+    min-height: 52px;
+  }
+
+  .app-shell-pose .pose-checklist-overlay {
+    cursor: pointer;
+  }
+}
