@@ -86,8 +86,10 @@ class NarrationStreamService:
         self._last_inferred_frame_id: int | None = None
         self._last_payload: dict[str, Any] | None = None
         self._source_connected = False
+        self._source_retry_count = 0
         self._last_error: str | None = None
         self._last_inference_ms: float | None = None
+        self._inference_started_ts_ms: float | None = None
 
     def status(self, configured: bool) -> dict[str, Any]:
         with self._lock:
@@ -96,6 +98,7 @@ class NarrationStreamService:
                 'configured': configured,
                 'stream_path': self.stream_path,
                 'source_connected': self._source_connected,
+                'source_retry_count': self._source_retry_count,
                 'rtsp_transport': self.rtsp_transport,
                 'interval_seconds': self.interval_seconds,
                 'vlm_model_name': self.vlm_model_name,
@@ -104,6 +107,8 @@ class NarrationStreamService:
                 'latest_frame_received_ts_ms': latest_frame.received_ts_ms if latest_frame else None,
                 'last_inferred_frame_id': self._last_inferred_frame_id,
                 'last_inference_ms': self._last_inference_ms,
+                'inference_in_progress': self._inference_started_ts_ms is not None,
+                'inference_started_ts_ms': self._inference_started_ts_ms,
                 'last_error': self._last_error,
                 'websocket_clients': len(self._clients),
             }
@@ -146,6 +151,7 @@ class NarrationStreamService:
 
         with self._lock:
             self._source_connected = False
+            self._inference_started_ts_ms = None
 
     def _reader_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -158,6 +164,7 @@ class NarrationStreamService:
 
                     with self._lock:
                         self._source_connected = True
+                        self._source_retry_count = 0
                         self._last_error = None
 
                     for frame in container.decode(video_stream):
@@ -178,6 +185,7 @@ class NarrationStreamService:
             except Exception as exc:
                 with self._lock:
                     self._source_connected = False
+                    self._source_retry_count += 1
                     self._last_error = _redact_rtsp_details(f'{type(exc).__name__}: {exc}')
                 if self._stop_event.wait(self.reconnect_seconds):
                     return
@@ -193,6 +201,8 @@ class NarrationStreamService:
 
             if latest is not None and latest.frame_id != self._last_inferred_frame_id:
                 inference_started_ts_ms = _epoch_ms()
+                with self._lock:
+                    self._inference_started_ts_ms = inference_started_ts_ms
                 try:
                     text = await asyncio.to_thread(self._infer_vlm, latest.rgb)
                     inference_ended_ts_ms = _epoch_ms()
@@ -226,6 +236,9 @@ class NarrationStreamService:
                             'message': error_message,
                         }
                     )
+                finally:
+                    with self._lock:
+                        self._inference_started_ts_ms = None
 
             elapsed = time.monotonic() - cycle_started
             await asyncio.sleep(max(self.interval_seconds - elapsed, 0.05))
