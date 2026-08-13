@@ -250,7 +250,9 @@
 
   .narration-card {
     width: 100%;
+    height: auto;
     min-height: 100%;
+    display: grid;
     gap: 10px;
     padding: max(12px, env(safe-area-inset-top)) 10px calc(14px + env(safe-area-inset-bottom));
     overflow: visible;
@@ -260,14 +262,26 @@
   }
 
   .narration-card::before {
+    display: block;
     opacity: 0.28;
   }
 
   .narration-header {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    display: flex;
     flex-direction: row;
     align-items: center;
     gap: 10px;
     padding: 2px 2px 0;
+    pointer-events: auto;
+  }
+
+  .narration-header > div:first-child {
+    display: block;
   }
 
   .narration-header > div {
@@ -294,6 +308,7 @@
     min-width: 84px;
     min-height: 42px;
     padding: 0 16px;
+    pointer-events: auto;
   }
 
   .narration-quick-status {
@@ -317,8 +332,19 @@
   }
 
   .narration-stage {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
     aspect-ratio: 4 / 3;
+    border: 1px solid rgba(226, 232, 240, 0.13);
     border-radius: 18px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  }
+
+  .narration-stage .pose-video {
+    width: 100%;
+    height: 100%;
   }
 
   .narration-overlay {
@@ -357,13 +383,27 @@
   }
 
   .narration-source-panel {
+    position: static;
+    top: auto;
+    left: auto;
+    right: auto;
+    z-index: auto;
+    display: grid;
+    grid-template-columns: 1fr;
     max-height: none;
     padding: 12px;
     overflow: visible;
+    pointer-events: auto;
   }
 
   .narration-source-note {
+    padding: 0;
+    border: 0;
+    background: transparent;
     font-size: 0.78rem;
+    text-overflow: clip;
+    white-space: normal;
+    backdrop-filter: none;
   }
 
   .narration-detail-body {
@@ -372,6 +412,7 @@
 
   .narration-detail-body .status-grid,
   .narration-detail-body .metrics-grid {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -386,6 +427,11 @@
   }
 
   .narration-card .error-text {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
     margin: 0 2px;
     padding: 9px 11px;
     border-radius: 12px;
