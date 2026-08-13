@@ -46,21 +46,6 @@
   }
 }
 
-.pose-checklist-overlay[role="button"] {
-  cursor: pointer;
-}
-
-.pose-checklist-overlay[role="button"]:focus-visible {
-  outline: 2px solid rgba(125, 211, 252, 0.9);
-  outline-offset: 4px;
-  border-radius: 22px;
-}
-
-.pose-checklist-overlay[role="button"] .pose-checklist-summary,
-.pose-checklist-overlay[role="button"] .pose-checklist-detail {
-  pointer-events: none;
-}
-
 @media (max-width: 640px) {
   .narration-overlay-meta {
     gap: 6px;
@@ -94,9 +79,5 @@
   .app-shell-pose .pose-session-controls .primary-button,
   .app-shell-pose .pose-session-controls .secondary-button {
     min-height: 52px;
-  }
-
-  .app-shell-pose .pose-checklist-overlay {
-    cursor: pointer;
   }
 }
