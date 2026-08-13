@@ -46,7 +46,17 @@ const getPublisherLabel = (status: string): string => {
 };
 
 export const MediaMtxVlmNarrationPanel = () => {
-  const { videoRef, status, latestNarration, errorMessage, start, stop } = useMediaMtxNarration();
+  const {
+    videoRef,
+    status,
+    latestNarration,
+    errorMessage,
+    cameraFacingMode,
+    isSwitchingCamera,
+    switchCamera,
+    start,
+    stop,
+  } = useMediaMtxNarration();
   const [mediaMtxBaseUrl, setMediaMtxBaseUrl] = useState(getDefaultMediaMtxBaseUrl);
   const [streamPath, setStreamPath] = useState(getDefaultMediaMtxStreamPath);
   const [publisherUser, setPublisherUser] = useState(DEFAULT_PUBLISHER_USER);
@@ -55,6 +65,7 @@ export const MediaMtxVlmNarrationPanel = () => {
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(() => window.matchMedia('(min-width: 821px)').matches);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
 
   useEffect(() => {
     const refresh = async () => {
@@ -143,8 +154,14 @@ export const MediaMtxVlmNarrationPanel = () => {
           ? '再開'
           : '開始';
 
+  const cameraSwitchLabel = isSwitchingCamera
+    ? '切替中…'
+    : cameraFacingMode === 'environment'
+      ? '前面へ'
+      : '背面へ';
+
   return (
-    <section className="pose-card narration-card">
+    <section className={`pose-card narration-card${focusMode ? ' narration-focus-mode' : ''}`}>
       <div className="pose-header narration-header">
         <div>
           <p className="eyebrow">MediaMTX + RTSP + SmolVLM + Triton</p>
@@ -180,6 +197,33 @@ export const MediaMtxVlmNarrationPanel = () => {
 
       <div className="pose-stage narration-stage">
         <video ref={videoRef} className="pose-video" playsInline muted autoPlay />
+        <div className="narration-stage-controls" aria-label="カメラ操作">
+          <button
+            className="narration-stage-button"
+            type="button"
+            onClick={() => void switchCamera()}
+            disabled={isSwitchingCamera || isBusy}
+          >
+            {cameraSwitchLabel}
+          </button>
+          <button
+            className="narration-stage-button"
+            type="button"
+            onClick={() => setFocusMode((current) => !current)}
+          >
+            {focusMode ? '戻る' : '全画面'}
+          </button>
+          {focusMode ? (
+            <button
+              className="narration-stage-button narration-stage-stop"
+              type="button"
+              onClick={handleSessionAction}
+              disabled={isBusy}
+            >
+              {actionLabel}
+            </button>
+          ) : null}
+        </div>
         <div className="narration-overlay" aria-live="polite">
           <span className="narration-kicker">AI narration</span>
           <strong>{narrationText}</strong>
