@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { sendWebRtcOffer } from '../api/backend';
-import { getCameraStream, SEND_FPS, SEND_HEIGHT, SEND_WIDTH } from './camera';
+import {
+  getCameraStream,
+  SEND_FPS,
+  SEND_HEIGHT,
+  SEND_WIDTH,
+  type CameraFacingMode,
+} from './camera';
 import { getPeerConnectionConfiguration } from './connectionConfig';
 import { waitForIceGatheringComplete } from './ice';
 import type { PoseDataChannelMessage, PoseMessage } from './types';
@@ -21,9 +27,12 @@ export const usePoseWebRtc = () => {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const activeSourceTypeRef = useRef<PoseInputSource['type'] | null>(null);
+  const cameraFacingModeRef = useRef<CameraFacingMode>('environment');
   const [status, setStatus] = useState<PoseSessionStatus>('idle');
   const [latestPose, setLatestPose] = useState<PoseMessage | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('environment');
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   const stop = useCallback(() => {
     setStatus('stopping');
@@ -42,9 +51,49 @@ export const usePoseWebRtc = () => {
       }
     }
     activeSourceTypeRef.current = null;
+    setIsSwitchingCamera(false);
     setLatestPose(null);
     setErrorMessage(null);
     setStatus('idle');
+  }, []);
+
+  const switchCamera = useCallback(async () => {
+    const previousFacingMode = cameraFacingModeRef.current;
+    const nextFacingMode: CameraFacingMode = previousFacingMode === 'environment' ? 'user' : 'environment';
+    const video = videoRef.current;
+    const previousStream = cameraStreamRef.current;
+
+    if (activeSourceTypeRef.current !== 'camera' || !video || !previousStream) {
+      cameraFacingModeRef.current = nextFacingMode;
+      setCameraFacingMode(nextFacingMode);
+      return;
+    }
+
+    setIsSwitchingCamera(true);
+    setErrorMessage(null);
+    previousStream.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+
+    try {
+      const nextStream = await getCameraStream(nextFacingMode);
+      cameraStreamRef.current = nextStream;
+      video.srcObject = nextStream;
+      await video.play();
+      cameraFacingModeRef.current = nextFacingMode;
+      setCameraFacingMode(nextFacingMode);
+    } catch (error) {
+      try {
+        const fallbackStream = await getCameraStream(previousFacingMode);
+        cameraStreamRef.current = fallbackStream;
+        video.srcObject = fallbackStream;
+        await video.play();
+      } catch {
+        // Preserve the original switching error so the user can stop/restart explicitly.
+      }
+      setErrorMessage(error instanceof Error ? `カメラ切替に失敗しました: ${error.message}` : 'カメラ切替に失敗しました');
+    } finally {
+      setIsSwitchingCamera(false);
+    }
   }, []);
 
   const start = useCallback(async (source: PoseInputSource = { type: 'camera' }) => {
@@ -58,7 +107,7 @@ export const usePoseWebRtc = () => {
       }
 
       if (source.type === 'camera') {
-        const cameraStream = await getCameraStream();
+        const cameraStream = await getCameraStream(cameraFacingModeRef.current);
         cameraStreamRef.current = cameraStream;
         video.loop = false;
         video.srcObject = cameraStream;
@@ -157,5 +206,16 @@ export const usePoseWebRtc = () => {
 
   useEffect(() => stop, [stop]);
 
-  return { videoRef, canvasRef, latestPose, status, errorMessage, start, stop };
+  return {
+    videoRef,
+    canvasRef,
+    latestPose,
+    status,
+    errorMessage,
+    cameraFacingMode,
+    isSwitchingCamera,
+    switchCamera,
+    start,
+    stop,
+  };
 };

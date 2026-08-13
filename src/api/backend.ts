@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:8080';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:8080';
 
 export type SessionDescriptionPayload = {
   sdp: string;
@@ -33,6 +33,49 @@ export type PoseRuntimeStatus = {
   };
 };
 
+export type NarrationRuntimeStatus = {
+  configured: boolean;
+  stream_path: string;
+  source_connected: boolean;
+  source_retry_count: number;
+  rtsp_transport: string;
+  interval_seconds: number;
+  vlm_model_name: string;
+  vlm_triton_grpc_url: string;
+  latest_frame_id: number | null;
+  latest_frame_received_ts_ms: number | null;
+  last_inferred_frame_id: number | null;
+  last_inference_ms: number | null;
+  inference_in_progress: boolean;
+  inference_started_ts_ms: number | null;
+  last_error: string | null;
+  websocket_clients: number;
+};
+
+export type NarrationMessage = {
+  type: 'narration';
+  streamPath: string;
+  frameId: number;
+  rtspReceiveTsMs: number;
+  inferenceStartTsMs: number;
+  inferenceEndTsMs: number;
+  resultSendTsMs: number;
+  inferenceMs: number;
+  text: string;
+};
+
+export type NarrationErrorMessage = {
+  type: 'narration-error';
+  streamPath?: string;
+  message: string;
+};
+
+export type NarrationStatusMessage = NarrationRuntimeStatus & {
+  type: 'narration-status';
+};
+
+export type NarrationWebSocketMessage = NarrationMessage | NarrationErrorMessage | NarrationStatusMessage;
+
 export const sendWebRtcOffer = async (offer: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit> => {
   const response = await fetch(`${API_BASE_URL}/webrtc/offer`, {
     method: 'POST',
@@ -56,4 +99,23 @@ export const fetchPoseStatus = async (): Promise<PoseRuntimeStatus> => {
     throw new Error(`Pose status failed: ${response.status}`);
   }
   return (await response.json()) as PoseRuntimeStatus;
+};
+
+export const fetchNarrationStatus = async (streamPath: string): Promise<NarrationRuntimeStatus> => {
+  const query = new URLSearchParams({ stream_path: streamPath });
+  const response = await fetch(`${API_BASE_URL}/narration/status?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Narration status failed: ${response.status}`);
+  }
+  return (await response.json()) as NarrationRuntimeStatus;
+};
+
+export const getNarrationWebSocketUrl = (streamPath: string): string => {
+  const url = new URL(API_BASE_URL, window.location.href);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const basePath = url.pathname.replace(/\/$/, '');
+  url.pathname = `${basePath}/narration/ws`;
+  url.search = new URLSearchParams({ stream_path: streamPath }).toString();
+  url.hash = '';
+  return url.toString();
 };

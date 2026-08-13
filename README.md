@@ -1,8 +1,10 @@
 # realtime-pose-triton
 
-React + WebRTC + FastAPI/aiortc + Triton + RTMPose のリアルタイム姿勢推定SPAです。
+React + WebRTC + FastAPI/aiortc + Triton + RTMPose のリアルタイム姿勢推定SPAと、MediaMTX + RTSP + SmolVLM を使った映像ナレーション検証を収録しています。
 
 ## Architecture
+
+既存のRTMPoseデモ:
 
 ```text
 React camera preview
@@ -13,6 +15,21 @@ React camera preview
   -> WebRTC DataChannel
   -> React canvas overlay
 ```
+
+MediaMTX + VLMナレーション経路:
+
+```text
+Smartphone browser
+  -> WebRTC / WHIP
+  -> MediaMTX
+  -> RTSP
+  -> narration backend (latest frame only)
+  -> SmolVLM / Triton CPU
+  -> WebSocket
+  -> browser narration overlay
+```
+
+VLMナレーション経路ではFastAPI/aiortcをWebRTC終端に使用しません。WebRTCはMediaMTXが終端し、推論バックエンドはRTSP readerとして動作します。
 
 ## Features
 
@@ -27,6 +44,16 @@ React camera preview
 - DataChannel pose result streaming
 - Canvas keypoint overlay
 - Optional ONNX startup download
+- RTMPoseのカメラ/動画入力、前面/背面カメラ切替、全画面集中表示
+- MediaMTX WHIP publisher UI
+- MediaMTX RTSP reader for VLM narration
+- VLMナレーションのカメラ/動画入力、前面/背面カメラ切替、全画面集中表示
+- VLM推論中の円形進捗表示と推論結果更新通知
+- stream pathごとの独立RTSP reader / WebSocket
+- Latest-frame-only VLM scheduling without inference backlog
+- SmolVLM narration delivery over WebSocket
+- Performance-oriented timestamps for RTSP receive / VLM inference / result send
+- `mediamtx-playground` performance runner向けapplication hook
 
 ## Setup
 
@@ -82,6 +109,46 @@ python3 examples/vlm/client.py ./path/to/image.jpg
 ```
 
 See `docs/vlm-cpu-triton.md` for startup, CPU tuning, and limitations.
+
+## MediaMTX + VLMリアルタイムナレーション
+
+スマートフォンのカメラ映像または端末内の動画ファイルをMediaMTXへWebRTC / WHIPでpublishし、backendが同じstream pathをRTSPで購読します。RTSP readerは映像を継続decodeし、VLM workerはその時点の最新フレームだけをSmolVLMへ渡します。
+
+VLM推論が更新間隔より遅い場合でも古いフレームをキューへ積まず、次回は最新フレームへ追従します。複数クライアントの性能測定に合わせ、`live/` 配下のstream pathごとにreaderとWebSocketを分離できます。
+
+ナレーション確認用Composeでは、同じスマートフォンUIからRTMPoseとVLMナレーションを切り替えられるよう、HTTPS web + backend + RTMPose Triton + CPU-only VLM Tritonを同時に起動します。
+
+RTMPoseを実推論で使う場合は、起動前に次のどちらかを準備します。
+
+```text
+models/rtmpose/1/model.onnx
+```
+
+または `.env` の `RTMPOSE_ONNX_URL` を設定します。実モデルartifactはGitへ登録しません。
+
+```bash
+COMPOSE_PROJECT_NAME=rtpose-narration \
+  docker compose -f docker-compose.narration.yml up -d --build
+```
+
+RTMPose Tritonの状態確認:
+
+```bash
+COMPOSE_PROJECT_NAME=rtpose-narration \
+  docker compose -f docker-compose.narration.yml ps triton
+```
+
+`triton` serviceにはRTMPoseモデルready endpointを使うhealthcheckを設定しています。`unhealthy` の場合はモデル配置またはTritonログを確認します。
+
+スマートフォンから直接ナレーション画面を開く場合:
+
+```text
+https://<host-lan-ip>:5173/?mode=narration
+```
+
+外部MediaMTXとのDockerネットワーク接続、RTSP設定、スマートフォンでの確認手順、performance runnerとの契約は `docs/mediamtx-vlm-narration.md` を参照してください。
+
+実RTSP base URLや認証情報は `.env` / `.env.local` にのみ置き、public repositoryへ登録しません。
 
 ## Development commands
 

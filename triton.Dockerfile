@@ -1,6 +1,10 @@
 FROM nvcr.io/nvidia/tritonserver:24.12-py3
 
-RUN apt-get update && apt-get install -y --no-install-recommends wget unzip ca-certificates && rm -rf /var/lib/apt/lists/*
+# Triton 24.12 already includes wget, unzip and the system CA bundle.
+# Avoid apt-get here so local builds do not depend on Ubuntu archive availability.
+RUN command -v wget >/dev/null \
+    && command -v unzip >/dev/null \
+    && test -r /etc/ssl/certs/ca-certificates.crt
 
 COPY triton/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from tritonclient.utils import InferenceServerException
 
+from app.narration import narration_manager
+from app.narration import router as narration_router
 from app.pose_triton import get_pose_runtime_status
 from app.webrtc import get_active_peer_count
 from app.webrtc import router as webrtc_router
@@ -22,6 +24,7 @@ app.add_middleware(
     allow_headers=['*'],
 )
 app.include_router(webrtc_router)
+app.include_router(narration_router)
 
 
 @app.get('/healthz')
@@ -47,4 +50,5 @@ def pose_status() -> dict[str, Any]:
 
 @app.on_event('shutdown')
 async def on_shutdown() -> None:
+    await narration_manager.shutdown()
     await shutdown_peer_connections()

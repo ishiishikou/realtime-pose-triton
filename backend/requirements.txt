@@ -2,6 +2,7 @@ aiortc
 av
 fastapi
 numpy
+Pillow
 pydantic
 tritonclient[grpc]
 uvicorn[standard]

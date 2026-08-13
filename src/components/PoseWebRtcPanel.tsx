@@ -27,13 +27,25 @@ const createEmptyHandRaiseStatus = (): HandRaiseCheckStatus => ({
 });
 
 export const PoseWebRtcPanel = () => {
-  const { videoRef, canvasRef, latestPose, status, errorMessage, start, stop } = usePoseWebRtc();
+  const {
+    videoRef,
+    canvasRef,
+    latestPose,
+    status,
+    errorMessage,
+    cameraFacingMode,
+    isSwitchingCamera,
+    switchCamera,
+    start,
+    stop,
+  } = usePoseWebRtc();
   const [runtimeStatus, setRuntimeStatus] = useState<PoseRuntimeStatus | null>(null);
   const [runtimeStatusError, setRuntimeStatusError] = useState<string | null>(null);
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
   const [inputMode, setInputMode] = useState<PoseInputMode>('camera');
   const [videoFileUrl, setVideoFileUrl] = useState<string | null>(null);
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
   const [completedHandRaiseChecks, setCompletedHandRaiseChecks] = useState<HandRaiseCheckStatus>(createEmptyHandRaiseStatus);
   const currentHandRaiseChecks = useMemo(() => evaluateHandRaiseChecks(latestPose), [latestPose]);
 
@@ -93,7 +105,7 @@ export const PoseWebRtcPanel = () => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, [canvasRef, latestPose]);
+  }, [canvasRef, latestPose, focusMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -102,13 +114,30 @@ export const PoseWebRtcPanel = () => {
     }
   }, [canvasRef, latestPose]);
 
-  const isRunning = status === 'running' || status === 'starting';
+  const isRunning = status === 'running';
+  const isBusy = status === 'starting' || status === 'stopping';
+  const isSessionActive = isRunning || status === 'starting';
   const modeLabel = runtimeStatus?.mock_mode ? 'mock' : 'real';
   const tritonLabel = formatTritonStatus(runtimeStatus);
   const modelIo = runtimeStatus?.model_io;
   const completedHandRaiseCount = HAND_RAISE_CHECKS.filter((check) => completedHandRaiseChecks[check.id]).length;
   const inferenceLabel = latestPose?.inferenceMs !== undefined && latestPose.inferenceMs !== null ? `${latestPose.inferenceMs} ms` : '-';
   const selectedSourceLabel = inputMode === 'camera' ? 'camera' : videoFileName ?? 'video not selected';
+  const cameraSwitchLabel = isSwitchingCamera
+    ? '切替中…'
+    : cameraFacingMode === 'environment'
+      ? '前面へ'
+      : '背面へ';
+  const actionLabel = status === 'starting'
+    ? '接続中…'
+    : status === 'stopping'
+      ? '停止中…'
+      : isRunning
+        ? '停止'
+        : status === 'error'
+          ? '再開'
+          : '開始';
+  const actionDisabled = isBusy || (!isRunning && inputMode === 'video' && !videoFileUrl);
 
   const handleVideoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -124,23 +153,31 @@ export const PoseWebRtcPanel = () => {
     void start({ type: 'camera' });
   };
 
+  const handleSessionAction = () => {
+    if (isRunning) {
+      stop();
+      return;
+    }
+    handleStart();
+  };
+
   const handleInputModeChange = (nextMode: PoseInputMode) => {
-    if (status !== 'idle') {
+    if (status !== 'idle' && status !== 'error') {
       return;
     }
     setInputMode(nextMode);
   };
 
   return (
-    <section className="pose-card">
+    <section className={`pose-card pose-card-pose${focusMode ? ' pose-focus-mode' : ''}`}>
       <div className="pose-header">
         <div>
           <p className="eyebrow">WebRTC + RTMPose + Triton</p>
           <h1>カメラ・動画でポーズ判定</h1>
           <p className="lead">カメラまたは動画ファイルに推論結果と実施状況を重ねて、右手・左手・両手の判定を確認します。</p>
         </div>
-        <div className="button-row compact">
-          <button className="primary-button" type="button" onClick={handleStart} disabled={isRunning || (inputMode === 'video' && !videoFileUrl)}>開始</button>
+        <div className="button-row compact pose-session-controls">
+          <button className="primary-button" type="button" onClick={handleStart} disabled={isSessionActive || (inputMode === 'video' && !videoFileUrl)}>開始</button>
           <button className="secondary-button" type="button" onClick={stop} disabled={status === 'idle'}>停止</button>
         </div>
       </div>
@@ -151,7 +188,7 @@ export const PoseWebRtcPanel = () => {
             className={inputMode === 'camera' ? 'source-mode-button active' : 'source-mode-button'}
             type="button"
             onClick={() => handleInputModeChange('camera')}
-            disabled={status !== 'idle'}
+            disabled={status !== 'idle' && status !== 'error'}
           >
             カメラ
           </button>
@@ -159,7 +196,7 @@ export const PoseWebRtcPanel = () => {
             className={inputMode === 'video' ? 'source-mode-button active' : 'source-mode-button'}
             type="button"
             onClick={() => handleInputModeChange('video')}
-            disabled={status !== 'idle'}
+            disabled={status !== 'idle' && status !== 'error'}
           >
             動画
           </button>
@@ -167,10 +204,20 @@ export const PoseWebRtcPanel = () => {
         {inputMode === 'video' ? (
           <label className="video-file-picker">
             <span>{videoFileName ?? '動画ファイルを選択'}</span>
-            <input type="file" accept="video/*" onChange={handleVideoFileChange} disabled={status !== 'idle'} />
+            <input type="file" accept="video/*" onChange={handleVideoFileChange} disabled={status !== 'idle' && status !== 'error'} />
           </label>
         ) : (
-          <p className="source-note">端末のカメラ映像を入力にします。</p>
+          <>
+            <p className="source-note">端末のカメラ映像を入力にします。</p>
+            <button
+              className="secondary-button pose-camera-switch-button"
+              type="button"
+              onClick={() => void switchCamera()}
+              disabled={isSwitchingCamera || isBusy}
+            >
+              {cameraSwitchLabel}
+            </button>
+          </>
         )}
       </div>
 
@@ -197,9 +244,36 @@ export const PoseWebRtcPanel = () => {
         </div>
       </div>
 
-      <div className="pose-stage">
+      <div className="pose-stage pose-stage-pose">
         <video ref={videoRef} src={inputMode === 'video' ? videoFileUrl ?? undefined : undefined} className="pose-video" playsInline muted autoPlay />
         <canvas ref={canvasRef} className="pose-canvas" />
+
+        <div className="pose-stage-controls" aria-label="ポーズ画面操作">
+          {focusMode && inputMode === 'camera' ? (
+            <button
+              className="pose-stage-button"
+              type="button"
+              onClick={() => void switchCamera()}
+              disabled={isSwitchingCamera || isBusy}
+            >
+              {cameraSwitchLabel}
+            </button>
+          ) : null}
+          <button className="pose-stage-button" type="button" onClick={() => setFocusMode((current) => !current)}>
+            {focusMode ? '戻る' : '全画面'}
+          </button>
+          {focusMode ? (
+            <button
+              className={`pose-stage-button${isRunning ? ' danger' : ' primary'}`}
+              type="button"
+              onClick={handleSessionAction}
+              disabled={actionDisabled}
+            >
+              {actionLabel}
+            </button>
+          ) : null}
+        </div>
+
         <div className="pose-checklist-overlay">
           <button
             className="pose-checklist-summary"
