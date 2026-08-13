@@ -17,11 +17,16 @@ import { waitForIceGatheringComplete } from '../pose/ice';
 
 export type MediaMtxNarrationStatus = 'idle' | 'starting' | 'running' | 'stopping' | 'error';
 
+export type MediaMtxNarrationInputSource =
+  | { type: 'camera' }
+  | { type: 'video'; url: string };
+
 export type MediaMtxPublisherOptions = {
   baseUrl: string;
   streamPath: string;
   username: string;
   password: string;
+  source?: MediaMtxNarrationInputSource;
 };
 
 export type MediaMtxPublisherStartResult = {
@@ -81,6 +86,7 @@ export const useMediaMtxNarration = () => {
   const whipResourceUrlRef = useRef<string | null>(null);
   const authorizationHeaderRef = useRef<string | null>(null);
   const cameraFacingModeRef = useRef<CameraFacingMode>('environment');
+  const activeSourceTypeRef = useRef<MediaMtxNarrationInputSource['type'] | null>(null);
 
   const [status, setStatus] = useState<MediaMtxNarrationStatus>('idle');
   const [latestNarration, setLatestNarration] = useState<NarrationMessage | null>(null);
@@ -131,8 +137,13 @@ export const useMediaMtxNarration = () => {
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.srcObject = null;
+      if (activeSourceTypeRef.current === 'video') {
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
+      }
     }
 
+    activeSourceTypeRef.current = null;
     setIsSwitchingCamera(false);
     setLatestNarration(null);
     setErrorMessage(null);
@@ -171,6 +182,10 @@ export const useMediaMtxNarration = () => {
     const nextFacingMode: CameraFacingMode = previousFacingMode === 'environment' ? 'user' : 'environment';
     const video = videoRef.current;
     const previousStream = cameraStreamRef.current;
+
+    if (activeSourceTypeRef.current === 'video') {
+      return;
+    }
 
     if (!video || !previousStream) {
       cameraFacingModeRef.current = nextFacingMode;
@@ -218,6 +233,7 @@ export const useMediaMtxNarration = () => {
     try {
       const baseUrl = normalizeBaseUrl(options.baseUrl);
       const streamPath = normalizeStreamPath(options.streamPath);
+      const source = options.source ?? { type: 'camera' as const };
       if (!baseUrl) {
         throw new Error('MediaMTX WebRTC URL is required');
       }
@@ -230,9 +246,24 @@ export const useMediaMtxNarration = () => {
         throw new Error('video element is not ready');
       }
 
-      const cameraStream = await getCameraStream(cameraFacingModeRef.current);
-      cameraStreamRef.current = cameraStream;
-      video.srcObject = cameraStream;
+      if (source.type === 'camera') {
+        const cameraStream = await getCameraStream(cameraFacingModeRef.current);
+        cameraStreamRef.current = cameraStream;
+        video.loop = false;
+        video.srcObject = cameraStream;
+        video.removeAttribute('src');
+      } else {
+        if (!source.url) {
+          throw new Error('動画ファイルが選択されていません');
+        }
+        video.pause();
+        video.srcObject = null;
+        video.src = source.url;
+        video.loop = true;
+        video.currentTime = 0;
+      }
+
+      activeSourceTypeRef.current = source.type;
       await video.play();
 
       const sendCanvas = document.createElement('canvas');
